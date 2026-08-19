@@ -14,6 +14,10 @@
       "types": "./lib/client/index.d.ts",
       "default": "./lib/client.js"
     },
+    "./browser-peer": {
+      "types": "./lib/browser-peer-client.d.ts",
+      "default": "./lib/browser-peer-client.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
