@@ -8,10 +8,16 @@ consumer is [dsh-webui-studio](https://github.com/CH4ACKO3/dsh-webui-studio).
 
 ## Status
 
-The repository currently contains the Host and browser plugin entrypoints,
-Harmony installation metadata, and the build/test workspace. Connection and
-Gateway patches will be implemented incrementally against the supported DSH
-release range.
+Phase 1 implements bidirectional Connection RPC for browser peers:
+
+- generation-scoped peer discovery and explicit Host targeting;
+- Host requests over the existing host WebSocket downlink;
+- Client responses over the existing `/api/respond` leg;
+- Client handler registration, cancellation, and disposal;
+- pending-call rejection when either downlink closes.
+
+The Harmony Patch targets the supported DSH release range and keeps protocol
+logic in this package. Symmetric Typert Gateway support is the next phase.
 
 ## Development
 
