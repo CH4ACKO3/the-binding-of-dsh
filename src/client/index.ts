@@ -4,3 +4,4 @@ export const inject = ['connection', 'typert']
 export function apply(): void {}
 
 export { createClientConnectionBinding } from '../shared/client-connection.js'
+export { installClientGateway } from '../shared/client-gateway.js'

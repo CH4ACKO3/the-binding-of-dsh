@@ -30,7 +30,11 @@ module.exports = {
       select: 'VariableDeclaration[name.name="HostConnectionService"] ClassExpression Constructor Block',
       expect: 1,
       apply({ node, sourceFile, edit }) {
-        edit.appendLeft(node.getStart(sourceFile) + 1, `
+        const first = node.statements[0]
+        if (first === undefined || !first.getText(sourceFile).startsWith('super(')) {
+          throw new Error('HostConnectionService constructor no longer starts with super()')
+        }
+        edit.appendRight(first.getEnd(), `
 \t\tthis.bidirectional = new HostConnectionBinding();
 \t\tthis.peers = this.bidirectional.peers;
 \t\tctx.effect(() => () => this.bidirectional.dispose(), "client-connection: bidirectional peers");`)

@@ -11,5 +11,8 @@
   "include": [
     "src/client/**/*.ts",
     "src/shared/**/*.ts"
+  ],
+  "exclude": [
+    "src/shared/peer-remote.ts"
   ]
 }

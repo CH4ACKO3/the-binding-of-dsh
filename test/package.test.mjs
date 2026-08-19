@@ -1,12 +1,24 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
-import { apply, inject, name } from '../lib/index.js'
+import {
+  GatewayDispatchError,
+  HostRemoteService,
+  apply,
+  createGatewayDispatcher,
+  inject,
+  installClientGateway,
+  name,
+} from '../lib/index.js'
 
 test('exports the Host plugin entrypoint', () => {
   assert.equal(name, 'the-binding-of-dsh')
   assert.deepEqual(inject, ['harmony'])
   assert.equal(typeof apply, 'function')
+  assert.equal(typeof createGatewayDispatcher, 'function')
+  assert.equal(typeof installClientGateway, 'function')
+  assert.equal(typeof HostRemoteService, 'function')
+  assert.equal(typeof GatewayDispatchError, 'function')
 })
 
 test('builds a DSH browser module', async () => {

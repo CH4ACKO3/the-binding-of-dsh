@@ -8,16 +8,19 @@ consumer is [dsh-webui-studio](https://github.com/CH4ACKO3/dsh-webui-studio).
 
 ## Status
 
-Phase 1 implements bidirectional Connection RPC for browser peers:
+Phase 2 implements bidirectional Connection RPC and a symmetric Typert Gateway:
 
 - generation-scoped peer discovery and explicit Host targeting;
 - Host requests over the existing host WebSocket downlink;
 - Client responses over the existing `/api/respond` leg;
 - Client handler registration, cancellation, and disposal;
 - pending-call rejection when either downlink closes.
+- one shared local Typert dispatcher on Host and Client;
+- strict descriptor, argument, lookup, Context, result, and error handling;
+- a generated Host Remote selected explicitly with `ctx.remote.for(peer)`.
 
 The Harmony Patch targets the supported DSH release range and keeps protocol
-logic in this package. Symmetric Typert Gateway support is the next phase.
+logic in this package. The Node peer client is the next phase.
 
 ## Development
 
