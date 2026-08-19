@@ -15,6 +15,7 @@ import { type RpcResult } from './shared/protocol.js'
 
 const MUX_PATH = '/api/events.mux'
 const HOST_PATH = '/api/events.host'
+const INTERNAL_BASE = 'http://dsh.internal'
 
 export type BrowserPeerChannel = 'mux' | 'host'
 
@@ -60,7 +61,8 @@ export class BrowserPeerClient {
   constructor(options: BrowserPeerClientOptions) {
     new TypertRegistry(this.ctx)
     this.fetch = options.fetch ?? globalThis.fetch
-    this.baseUrl = new URL(options.baseUrl ?? globalThis.location.origin)
+    const origin = globalThis.location?.origin
+    this.baseUrl = new URL(options.baseUrl ?? (origin !== undefined && origin !== 'null' ? origin : INTERNAL_BASE))
     this.contribution = options.contribution
     this.createWebSocket = options.createWebSocket ?? ((url, protocol) => new WebSocket(url, protocol))
     this.connection = createClientConnectionBinding({
