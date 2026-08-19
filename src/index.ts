@@ -4,6 +4,12 @@ export const inject = ['harmony']
 /** Host entrypoint. Connection and Gateway hooks are added by Harmony patches. */
 export function apply(): void {}
 
+export { NodePeerClient } from './node-peer-client.js'
+export type {
+  NodePeerClientHandle,
+  NodePeerClientOptions,
+} from './node-peer-client.js'
+
 export {
   HostConnectionBinding,
   sendConnectionMessage,
@@ -32,4 +38,5 @@ export type {
 export type {
   HostPeerRemote,
   PeerRemoteApi,
+  TypertRemoteCaller,
 } from './shared/peer-remote.js'

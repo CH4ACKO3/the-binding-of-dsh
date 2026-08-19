@@ -49,6 +49,7 @@ interface PendingCall {
 
 interface Generation {
   id: string
+  kind: 'browser' | 'node'
   failed: boolean
   mux?: SocketLike
   host?: SocketLike
@@ -133,6 +134,10 @@ export class HostConnectionBinding implements ReverseConnectionHost {
     const id = randomUUID()
     this.generations.set(id, {
       id,
+      kind: request.headers.get('content-type')?.startsWith('application/json') === true
+        && (await request.json() as { kind?: unknown }).kind === 'node'
+        ? 'node'
+        : 'browser',
       failed: false,
       pending: new Map(),
     })
@@ -165,7 +170,7 @@ export class HostConnectionBinding implements ReverseConnectionHost {
     if (generation.peer !== undefined || generation.failed) return
     const peer: ConnectionPeer = {
       id: generation.id,
-      kind: 'browser',
+      kind: generation.kind,
       call: (channel, endpoint, payload, signal) => this.call(generation, channel, endpoint, payload, signal),
     }
     generation.peer = peer

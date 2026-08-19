@@ -16,6 +16,7 @@
   },
   "include": [
     "src/index.ts",
+    "src/node-peer-client.ts",
     "src/host/**/*.ts",
     "src/shared/**/*.ts"
   ]

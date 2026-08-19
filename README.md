@@ -18,9 +18,10 @@ Phase 2 implements bidirectional Connection RPC and a symmetric Typert Gateway:
 - one shared local Typert dispatcher on Host and Client;
 - strict descriptor, argument, lookup, Context, result, and error handling;
 - a generated Host Remote selected explicitly with `ctx.remote.for(peer)`.
+- a Node peer client using the same HTTP and two-WebSocket Connection carrier.
 
 The Harmony Patch targets the supported DSH release range and keeps protocol
-logic in this package. The Node peer client is the next phase.
+logic in this package. Studio route migration is the next phase.
 
 ## Development
 

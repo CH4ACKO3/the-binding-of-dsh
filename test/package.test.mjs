@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   GatewayDispatchError,
   HostRemoteService,
+  NodePeerClient,
   apply,
   createGatewayDispatcher,
   inject,
@@ -18,6 +19,7 @@ test('exports the Host plugin entrypoint', () => {
   assert.equal(typeof createGatewayDispatcher, 'function')
   assert.equal(typeof installClientGateway, 'function')
   assert.equal(typeof HostRemoteService, 'function')
+  assert.equal(typeof NodePeerClient, 'function')
   assert.equal(typeof GatewayDispatchError, 'function')
 })
 

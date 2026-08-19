@@ -6,7 +6,7 @@ import type {
   TypertRemoteContribution,
   TypertRemoteNamespaceMap,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { ConnectionPeer } from '../host/connection.js'
+import type { RpcResult } from './protocol.js'
 import { parseGatewayValue } from './gateway-dispatcher.js'
 
 interface MountToken {
@@ -39,8 +39,17 @@ interface NamespaceState {
 
 export interface PeerRemoteApi extends TypertRemoteNamespaceMap {}
 
+export interface TypertRemoteCaller {
+  call(
+    channel: string,
+    endpoint: string,
+    payload: unknown,
+    signal?: AbortSignal,
+  ): Promise<RpcResult<unknown>>
+}
+
 export interface HostPeerRemote {
-  for(peer: ConnectionPeer): PeerRemoteApi
+  for(peer: TypertRemoteCaller): PeerRemoteApi
   $mount(contribution: TypertRemoteContribution): Promise<TypertDisposer>
 }
 
@@ -50,7 +59,7 @@ export class PeerRemoteProjector {
 
   constructor(private readonly ownerCtx: Context) {}
 
-  bind(peer: ConnectionPeer, callerCtx: Context): PeerRemoteApi {
+  bind(peer: TypertRemoteCaller, callerCtx: Context): PeerRemoteApi {
     const bound = new BoundPeerRemote(this.ownerCtx, callerCtx, peer)
     for (const [endpoint, variants] of this.methods) bound.install(endpoint, variants)
     this.bound.add(bound)
@@ -117,7 +126,7 @@ class BoundPeerRemote {
   constructor(
     private readonly ownerCtx: Context,
     private readonly callerCtx: Context,
-    private readonly peer: ConnectionPeer,
+    private readonly peer: TypertRemoteCaller,
   ) {}
 
   install(endpoint: string, variants: MethodVariants): void {
