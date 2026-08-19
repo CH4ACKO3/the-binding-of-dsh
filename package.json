@@ -34,7 +34,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
     "test": "npm run build && node --test test/*.test.mjs",
     "check": "npm run typecheck && npm test",
-    "prepare": "npm run build"
+    "prepack": "npm run build"
   },
   "engines": {
     "node": "^22.22.3 || >=24.11.1"

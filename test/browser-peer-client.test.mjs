@@ -86,6 +86,24 @@ test('standalone browser peer owns one generation and both native event sockets'
   assert.deepEqual(await client.remote.echo.echo('hello'), { ok: true, value: 'browser:hello' })
   assert.deepEqual(requests.map(request => request.path), ['/api/connection.open', '/api/echo/echo'])
 
+  const events = []
+  const stopEvent = client.onEvent(event => events.push(event))
+  const host = sockets.find(socket => new URL(socket.url).pathname === '/api/events.host')
+  host.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({
+    type: 'server-request',
+    rpcId: 'push-1',
+    method: 'events.host',
+    payload: {
+      type: 'host/session-status',
+      sessionId: '11111111-1111-4111-8111-111111111111',
+      running: true,
+    },
+  }) }))
+  assert.equal(events.length, 1)
+  assert.equal(events[0].channel, 'host')
+  assert.equal(events[0].envelope.payload.type, 'host/session-status')
+  stopEvent()
+
   sockets[0].close()
   assert.equal(client.connected, false)
   assert.deepEqual(states, [false, true, false])

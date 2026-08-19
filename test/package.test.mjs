@@ -28,3 +28,10 @@ test('builds a DSH browser module', async () => {
   assert.match(source, /window\.__ModuleLoader__\.load\(/)
   assert.match(source, /id: "the-binding-of-dsh"/)
 })
+
+test('ships built files without an install-time build script', async () => {
+  const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+  assert.equal(manifest.scripts.prepare, undefined)
+  assert.equal(manifest.scripts.prepack, 'npm run build')
+  assert.equal(typeof manifest.exports['./browser-peer'].default, 'string')
+})
