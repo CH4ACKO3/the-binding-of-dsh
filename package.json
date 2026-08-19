@@ -18,6 +18,14 @@
       "types": "./lib/browser-peer-client.d.ts",
       "default": "./lib/browser-peer-client.js"
     },
+    "./host/connection": {
+      "types": "./lib/host/connection.d.ts",
+      "default": "./lib/host/connection.js"
+    },
+    "./host/gateway": {
+      "types": "./lib/host/gateway.d.ts",
+      "default": "./lib/host/gateway.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

@@ -4,21 +4,19 @@ const target = files => ({
   files,
 })
 
-/** @type {import('dsh-harmony').HarmonyPatch} */
-module.exports = {
-  id: 'bidirectional-typert-gateway',
-  patches: [
+/** @type {import('dsh-harmony').HarmonyPatch[]} */
+module.exports = [
     {
-      id: 'host-imports',
+      id: 'gateway-host-imports',
       target: target(['lib/index.js']),
       select: 'SourceFile',
       expect: 1,
       apply({ edit }) {
-        edit.prepend('import { createHostGatewayDispatcher, HostRemoteService } from "the-binding-of-dsh";\n')
+        edit.prepend('import { createHostGatewayDispatcher, HostRemoteService } from "the-binding-of-dsh/host/gateway";\n')
       },
     },
     {
-      id: 'host-shared-dispatcher-and-remote',
+      id: 'gateway-host-shared-dispatcher-and-remote',
       target: target(['lib/index.js']),
       select: 'VariableDeclaration[name.name="TypertGatewayService"] ClassExpression Constructor > Block',
       expect: 1,
@@ -40,7 +38,7 @@ module.exports = {
       },
     },
     {
-      id: 'client-local-dispatcher',
+      id: 'gateway-client-local-dispatcher',
       target: target(['lib/client.js']),
       select: 'FunctionDeclaration[name.name="apply"] > Block',
       expect: 1,
@@ -51,5 +49,4 @@ module.exports = {
         )
       },
     },
-  ],
-}
+]

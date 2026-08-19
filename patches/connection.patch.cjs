@@ -11,17 +11,15 @@ function variableStatement(node, ts) {
   return current
 }
 
-/** @type {import('dsh-harmony').HarmonyPatch} */
-module.exports = {
-  id: 'bidirectional-connection',
-  patches: [
+/** @type {import('dsh-harmony').HarmonyPatch[]} */
+module.exports = [
     {
       id: 'host-imports',
       target: target(['lib/index.js']),
       select: 'SourceFile',
       expect: 1,
       apply({ edit }) {
-        edit.prepend('import { HostConnectionBinding, sendConnectionMessage } from "the-binding-of-dsh";\n')
+        edit.prepend('import { HostConnectionBinding, sendConnectionMessage } from "the-binding-of-dsh/host/connection";\n')
       },
     },
     {
@@ -190,5 +188,4 @@ module.exports = {
 \t\t\t}`)
       },
     },
-  ],
-}
+]

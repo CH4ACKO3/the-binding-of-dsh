@@ -34,4 +34,6 @@ test('ships built files without an install-time build script', async () => {
   assert.equal(manifest.scripts.prepare, undefined)
   assert.equal(manifest.scripts.prepack, 'npm run build')
   assert.equal(typeof manifest.exports['./browser-peer'].default, 'string')
+  assert.equal(manifest.exports['./host/connection'].default, './lib/host/connection.js')
+  assert.equal(manifest.exports['./host/gateway'].default, './lib/host/gateway.js')
 })

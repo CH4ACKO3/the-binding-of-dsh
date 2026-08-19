@@ -17,7 +17,7 @@ function targetPath(member) {
 
 async function applyPatch(declaration) {
   const sources = new Map()
-  for (const member of declaration.patches) {
+  for (const member of declaration) {
     const path = targetPath(member)
     const source = sources.get(path) ?? await readFile(path, 'utf8')
     const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
@@ -31,6 +31,7 @@ async function applyPatch(declaration) {
 }
 
 test('Connection Harmony patch binds and produces parseable rc.8 sources', async () => {
+  assert.equal(declaration.length, 15)
   const sources = await applyPatch(declaration)
   assert.equal(sources.size, 2)
   for (const [path, source] of sources) {
@@ -54,6 +55,7 @@ test('Connection Harmony patch binds and produces parseable rc.8 sources', async
 })
 
 test('Gateway Harmony patch binds and produces parseable rc.8 sources', async () => {
+  assert.equal(gatewayDeclaration.length, 3)
   const sources = await applyPatch(gatewayDeclaration)
   assert.equal(sources.size, 2)
   for (const [path, source] of sources) {

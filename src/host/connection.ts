@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import type {} from '@deepseek-ai/dsh-client-connection'
-import { clientResponseSchema } from '@deepseek-ai/dsh-host-apiproxy/api/rpc.schema'
 import {
   CONNECTION_CANCEL_METHOD,
   CONNECTION_OPEN_PATH,
@@ -58,6 +57,23 @@ interface Generation {
 }
 
 const sendQueues = new WeakMap<object, Promise<void>>()
+
+function clientResponse(value: unknown): ClientResponse | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const message = value as Partial<ClientResponse>
+  if (message.type !== 'client-response' || typeof message.rpcId !== 'string'
+    || typeof message.result !== 'object' || message.result === null
+    || typeof message.result.ok !== 'boolean') return undefined
+  if (message.result.ok) {
+    return Object.hasOwn(message.result, 'value') ? message as ClientResponse : undefined
+  }
+  const error = message.result.error
+  return typeof error === 'object' && error !== null
+    && typeof error.code === 'string' && typeof error.message === 'string'
+    && Object.hasOwn(error, 'details')
+    ? message as ClientResponse
+    : undefined
+}
 
 export function sendConnectionMessage(socket: SocketLike, message: ServerRequest): Promise<void> {
   const previous = sendQueues.get(socket) ?? Promise.resolve()
@@ -152,9 +168,8 @@ export class HostConnectionBinding implements ReverseConnectionHost {
     } catch {
       return Response.json({ accepted: false, reason: 'bad-response' })
     }
-    const parsed = clientResponseSchema.safeParse(body)
-    if (!parsed.success) return Response.json({ accepted: false, reason: 'bad-response' })
-    const message = parsed.data as ClientResponse
+    const message = clientResponse(body)
+    if (message === undefined) return Response.json({ accepted: false, reason: 'bad-response' })
     if (message.rpcId !== request.headers.get(CONNECTION_RPC_HEADER)) {
       return Response.json({ accepted: false, reason: 'bad-response' })
     }
