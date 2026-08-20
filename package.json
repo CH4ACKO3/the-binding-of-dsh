@@ -40,7 +40,7 @@
     "build:client": "tsdown --config-loader unrun && tsc -p tsconfig.client.build.json",
     "build:host": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
-    "test": "npm run build && node --test test/*.test.mjs",
+    "test": "npm run build && node --test test/*.test.ts",
     "check": "npm run typecheck && npm test",
     "prepack": "npm run build"
   },
@@ -65,8 +65,8 @@
     },
     "harmony": {
       "patches": [
-        "./patches/connection.patch.cjs",
-        "./patches/gateway.patch.cjs"
+        "./patches/connection.patch.cts",
+        "./patches/gateway.patch.cts"
       ]
     },
     "client": {

@@ -1,27 +1,27 @@
 # The Binding of DSH
 
-Bidirectional service calls over the existing DSH Connection and Typert Gateway.
+A DSH plugin that enables bidirectional RPC between Host and Client through the
+native DSH Connection and Typert Gateway.
 
-The plugin will add targeted Host-to-Client calls, a symmetric Typert Gateway,
-and a Node peer client without introducing another RPC transport. Its first
-consumer is [dsh-webui-studio](https://github.com/CH4ACKO3/dsh-webui-studio).
+## Features
 
-## Status
+- Targeted Host-to-Client calls for connected browser or Node peers.
+- Symmetric Typert Gateway calls in both directions.
+- Request correlation, cancellation, and connection lifecycle handling.
+- Harmony patches that reuse DSH's existing HTTP and WebSocket transport.
 
-Phase 2 implements bidirectional Connection RPC and a symmetric Typert Gateway:
+The plugin adds no parallel RPC protocol. Connection remains responsible for
+transport and peer addressing, while Typert Gateway remains responsible for
+service descriptors, codecs, invocation, and errors.
 
-- generation-scoped peer discovery and explicit Host targeting;
-- Host requests over the existing host WebSocket downlink;
-- Client responses over the existing `/api/respond` leg;
-- Client handler registration, cancellation, and disposal;
-- pending-call rejection when either downlink closes.
-- one shared local Typert dispatcher on Host and Client;
-- strict descriptor, argument, lookup, Context, result, and error handling;
-- a generated Host Remote selected explicitly with `ctx.remote.for(peer)`.
-- a Node peer client using the same HTTP and two-WebSocket Connection carrier.
+## Installation
 
-The Harmony Patch targets the supported DSH release range and keeps protocol
-logic in this package. Studio route migration is the next phase.
+```sh
+npm install the-binding-of-dsh
+```
+
+The package declares its DSH client entrypoint and Harmony patches in
+`package.json`, so it can be enabled as a regular DSH plugin.
 
 ## Development
 
@@ -32,13 +32,6 @@ npm install
 npm run check
 ```
 
-The implementation follows three boundaries:
+## License
 
-- Connection owns transport, peer addressing, request correlation, cancellation,
-  and connection teardown.
-- Typert Gateway owns descriptors, invocation, codecs, lookups, and RPC errors.
-- Consumers such as Studio expose ordinary Cordis Services and do not create a
-  parallel transport.
-
-Validation and request trust should match the native DSH Connection behavior.
-Compatibility is declared as a tested SemVer range rather than an exact release.
+MIT
