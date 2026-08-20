@@ -12,7 +12,7 @@ const gatewayDeclaration = require('../patches/gateway.patch.cjs')
 
 function targetPath(member) {
   const packagePath = require.resolve(`${member.target.package}/package.json`)
-  return new URL(member.target.files[0], `file://${packagePath}`).pathname
+  return new URL(member.target.file, `file://${packagePath}`).pathname
 }
 
 async function applyPatch(declaration) {

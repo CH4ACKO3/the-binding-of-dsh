@@ -1,7 +1,7 @@
-const target = files => ({
+const target = file => ({
   package: '@deepseek-ai/dsh-client-connection',
   version: '^0.1.0-rc.7',
-  files,
+  file,
 })
 
 function variableStatement(node, ts) {
@@ -15,7 +15,7 @@ function variableStatement(node, ts) {
 module.exports = [
     {
       id: 'host-imports',
-      target: target(['lib/index.js']),
+      target: target('lib/index.js'),
       select: 'SourceFile',
       expect: 1,
       apply({ edit }) {
@@ -24,7 +24,7 @@ module.exports = [
     },
     {
       id: 'host-service',
-      target: target(['lib/index.js']),
+      target: target('lib/index.js'),
       select: 'VariableDeclaration[name.name="HostConnectionService"] ClassExpression Constructor Block',
       expect: 1,
       apply({ node, sourceFile, edit }) {
@@ -40,7 +40,7 @@ module.exports = [
     },
     {
       id: 'host-internal-routes',
-      target: target(['lib/index.js']),
+      target: target('lib/index.js'),
       select: 'MethodDeclaration[name.name="createSharedFetchHandler"] ArrowFunction > Block',
       expect: 1,
       apply({ node, sourceFile, edit }) {
@@ -51,7 +51,7 @@ module.exports = [
     },
     {
       id: 'host-serialized-writer',
-      target: target(['lib/index.js']),
+      target: target('lib/index.js'),
       select: 'FunctionDeclaration[name.name="send"]',
       expect: 1,
       apply({ node, sourceFile, edit }) {
@@ -64,7 +64,7 @@ module.exports = [
     },
     {
       id: 'host-downlink-constructor',
-      target: target(['lib/index.js']),
+      target: target('lib/index.js'),
       select: 'VariableDeclaration[name.name="WebSocketDownlinks"] ClassExpression Constructor',
       expect: 1,
       apply({ node, sourceFile, edit }) {
@@ -77,7 +77,7 @@ module.exports = [
     },
     {
       id: 'host-mux-attachment',
-      target: target(['lib/index.js']),
+      target: target('lib/index.js'),
       select: 'MethodDeclaration[name.name="handleMux"] CallExpression[expression.name.name="upgrade"]',
       expect: 1,
       apply({ node, edit }) {
@@ -86,7 +86,7 @@ module.exports = [
     },
     {
       id: 'host-host-attachment',
-      target: target(['lib/index.js']),
+      target: target('lib/index.js'),
       select: 'MethodDeclaration[name.name="handleHost"] CallExpression[expression.name.name="upgrade"]',
       expect: 1,
       apply({ node, edit }) {
@@ -95,7 +95,7 @@ module.exports = [
     },
     {
       id: 'host-socket-attachment',
-      target: target(['lib/index.js']),
+      target: target('lib/index.js'),
       select: 'MethodDeclaration[name.name="upgrade"]',
       expect: 1,
       apply({ node, sourceFile, edit }) {
@@ -110,7 +110,7 @@ module.exports = [
     },
     {
       id: 'host-service-instance',
-      target: target(['lib/index.js']),
+      target: target('lib/index.js'),
       select: 'FunctionDeclaration[name.name="apply"] VariableDeclaration[name.name="fetchHandler"] NewExpression[expression.name="HostConnectionService"]',
       expect: 1,
       apply({ node, sourceFile, edit, ts }) {
@@ -122,7 +122,7 @@ module.exports = [
     },
     {
       id: 'host-downlink-instance',
-      target: target(['lib/index.js']),
+      target: target('lib/index.js'),
       select: 'FunctionDeclaration[name.name="apply"] NewExpression[expression.name="WebSocketDownlinks"]',
       expect: 1,
       apply({ node, edit }) {
@@ -131,7 +131,7 @@ module.exports = [
     },
     {
       id: 'client-generation',
-      target: target(['lib/client.js']),
+      target: target('lib/client.js'),
       select: 'MethodDeclaration[name.name="readWebSocket"] > Block',
       expect: 1,
       apply({ node, sourceFile, edit }) {
@@ -141,7 +141,7 @@ module.exports = [
     },
     {
       id: 'client-socket-protocol',
-      target: target(['lib/client.js']),
+      target: target('lib/client.js'),
       select: 'MethodDeclaration[name.name="readWebSocket"] VariableDeclaration[name.name="socket"]',
       expect: 1,
       apply({ node, sourceFile, edit }) {
@@ -153,7 +153,7 @@ module.exports = [
     },
     {
       id: 'client-control-dispatch',
-      target: target(['lib/client.js']),
+      target: target('lib/client.js'),
       select: 'MethodDeclaration[name.name="readWebSocket"] BinaryExpression[left.name="frame"]',
       expect: 1,
       apply({ node, sourceFile, edit }) {
@@ -163,7 +163,7 @@ module.exports = [
     },
     {
       id: 'client-generation-release',
-      target: target(['lib/client.js']),
+      target: target('lib/client.js'),
       select: 'MethodDeclaration[name.name="readWebSocket"] TryStatement > Block:has(CallExpression[expression.name.name="removeEventListener"])',
       expect: 1,
       apply({ node, sourceFile, edit }) {
@@ -173,7 +173,7 @@ module.exports = [
     },
     {
       id: 'client-binding',
-      target: target(['lib/client.js']),
+      target: target('lib/client.js'),
       select: 'FunctionDeclaration[name.name="apply"] VariableDeclaration[name.name="rpc"]',
       expect: 1,
       apply({ node, sourceFile, edit, ts }) {

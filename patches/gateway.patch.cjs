@@ -1,14 +1,14 @@
-const target = files => ({
+const target = file => ({
   package: '@deepseek-ai/dsh-api-gateway',
   version: '^0.1.0-rc.7',
-  files,
+  file,
 })
 
 /** @type {import('dsh-harmony').HarmonyPatch[]} */
 module.exports = [
     {
       id: 'gateway-host-imports',
-      target: target(['lib/index.js']),
+      target: target('lib/index.js'),
       select: 'SourceFile',
       expect: 1,
       apply({ edit }) {
@@ -17,7 +17,7 @@ module.exports = [
     },
     {
       id: 'gateway-host-shared-dispatcher-and-remote',
-      target: target(['lib/index.js']),
+      target: target('lib/index.js'),
       select: 'VariableDeclaration[name.name="TypertGatewayService"] ClassExpression Constructor > Block',
       expect: 1,
       apply({ node, sourceFile, edit }) {
@@ -39,7 +39,7 @@ module.exports = [
     },
     {
       id: 'gateway-client-local-dispatcher',
-      target: target(['lib/client.js']),
+      target: target('lib/client.js'),
       select: 'FunctionDeclaration[name.name="apply"] > Block',
       expect: 1,
       apply({ node, edit }) {
