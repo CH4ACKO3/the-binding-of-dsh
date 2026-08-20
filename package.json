@@ -86,7 +86,7 @@
     "@deepseek-ai/dsh-host-apiproxy": "^0.1.0-rc.8",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.8",
     "@deepseek-ai/dsh-typert-registry": "^0.1.0-rc.8",
-    "dsh-harmony": "^0.6.0"
+    "dsh-harmony": "^0.7.1"
   },
   "dependencies": {
     "ws": "^8.21.0"
@@ -101,7 +101,7 @@
     "@phenomnomnominal/tsquery": "^6.2.0",
     "@types/node": "^24.10.0",
     "@types/ws": "^8.18.1",
-    "dsh-harmony": "^0.6.0",
+    "dsh-harmony": "^0.7.1",
     "magic-string": "^0.30.21",
     "tsdown": "^0.22.14",
     "typescript": "^6.0.3",
