@@ -1,5 +1,9 @@
 # The Binding of DSH
 
+[![Powered by Harmony](https://memorax-ai.github.io/dsh-harmony/harmony-powered.svg)](https://memorax-ai.github.io/dsh-harmony/)
+
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 A DSH plugin that enables bidirectional RPC between Host and Client through the
 native DSH Connection and Typert Gateway.
 
