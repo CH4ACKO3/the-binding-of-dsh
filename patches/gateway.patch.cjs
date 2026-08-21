@@ -8,6 +8,7 @@ const target = file => ({
 module.exports = [
     {
       id: 'gateway-host-imports',
+      description: 'Import the bidirectional Typert Gateway host integration.',
       target: target('lib/index.js'),
       select: 'SourceFile',
       expect: 1,
@@ -17,6 +18,7 @@ module.exports = [
     },
     {
       id: 'gateway-host-shared-dispatcher-and-remote',
+      description: 'Share Typert dispatch with remote peers and expose Host Remote calls.',
       target: target('lib/index.js'),
       select: 'VariableDeclaration[name.name="TypertGatewayService"] ClassExpression Constructor > Block',
       expect: 1,
@@ -39,6 +41,7 @@ module.exports = [
     },
     {
       id: 'gateway-client-local-dispatcher',
+      description: 'Serve client-local Typert endpoints over the native Gateway connection.',
       target: target('lib/client.js'),
       select: 'FunctionDeclaration[name.name="apply"] > Block',
       expect: 1,

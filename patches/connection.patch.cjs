@@ -15,6 +15,7 @@ function variableStatement(node, ts) {
 module.exports = [
     {
       id: 'host-imports',
+      description: 'Import the bidirectional Connection host binding.',
       target: target('lib/index.js'),
       select: 'SourceFile',
       expect: 1,
@@ -24,6 +25,7 @@ module.exports = [
     },
     {
       id: 'host-service',
+      description: 'Attach peer tracking and lifecycle cleanup to the Host Connection service.',
       target: target('lib/index.js'),
       select: 'VariableDeclaration[name.name="HostConnectionService"] ClassExpression Constructor Block',
       expect: 1,
@@ -40,6 +42,7 @@ module.exports = [
     },
     {
       id: 'host-internal-routes',
+      description: 'Handle bidirectional Connection control requests on the native fetch route.',
       target: target('lib/index.js'),
       select: 'MethodDeclaration[name.name="createSharedFetchHandler"] ArrowFunction > Block',
       expect: 1,
@@ -51,6 +54,7 @@ module.exports = [
     },
     {
       id: 'host-serialized-writer',
+      description: 'Serialize native downlink writes through the shared Connection sender.',
       target: target('lib/index.js'),
       select: 'FunctionDeclaration[name.name="send"]',
       expect: 1,
@@ -64,6 +68,7 @@ module.exports = [
     },
     {
       id: 'host-downlink-constructor',
+      description: 'Provide the bidirectional binding to WebSocket downlinks.',
       target: target('lib/index.js'),
       select: 'VariableDeclaration[name.name="WebSocketDownlinks"] ClassExpression Constructor',
       expect: 1,
@@ -77,6 +82,7 @@ module.exports = [
     },
     {
       id: 'host-mux-attachment',
+      description: 'Identify mux WebSockets when upgrading Connection downlinks.',
       target: target('lib/index.js'),
       select: 'MethodDeclaration[name.name="handleMux"] CallExpression[expression.name.name="upgrade"]',
       expect: 1,
@@ -86,6 +92,7 @@ module.exports = [
     },
     {
       id: 'host-host-attachment',
+      description: 'Identify host WebSockets when upgrading Connection downlinks.',
       target: target('lib/index.js'),
       select: 'MethodDeclaration[name.name="handleHost"] CallExpression[expression.name.name="upgrade"]',
       expect: 1,
@@ -95,6 +102,7 @@ module.exports = [
     },
     {
       id: 'host-socket-attachment',
+      description: 'Attach upgraded WebSockets to the bidirectional Connection binding.',
       target: target('lib/index.js'),
       select: 'MethodDeclaration[name.name="upgrade"]',
       expect: 1,
@@ -110,6 +118,7 @@ module.exports = [
     },
     {
       id: 'host-service-instance',
+      description: 'Reuse one Host Connection service across fetch and downlink paths.',
       target: target('lib/index.js'),
       select: 'FunctionDeclaration[name.name="apply"] VariableDeclaration[name.name="fetchHandler"] NewExpression[expression.name="HostConnectionService"]',
       expect: 1,
@@ -122,6 +131,7 @@ module.exports = [
     },
     {
       id: 'host-downlink-instance',
+      description: 'Connect WebSocket downlinks to the shared bidirectional binding.',
       target: target('lib/index.js'),
       select: 'FunctionDeclaration[name.name="apply"] NewExpression[expression.name="WebSocketDownlinks"]',
       expect: 1,
@@ -131,6 +141,7 @@ module.exports = [
     },
     {
       id: 'client-generation',
+      description: 'Open a bidirectional peer generation with the native Connection socket.',
       target: target('lib/client.js'),
       select: 'MethodDeclaration[name.name="readWebSocket"] > Block',
       expect: 1,
@@ -141,6 +152,7 @@ module.exports = [
     },
     {
       id: 'client-socket-protocol',
+      description: 'Send the peer generation id as the Connection WebSocket subprotocol.',
       target: target('lib/client.js'),
       select: 'MethodDeclaration[name.name="readWebSocket"] VariableDeclaration[name.name="socket"]',
       expect: 1,
@@ -153,6 +165,7 @@ module.exports = [
     },
     {
       id: 'client-control-dispatch',
+      description: 'Dispatch bidirectional control frames before native Connection messages.',
       target: target('lib/client.js'),
       select: 'MethodDeclaration[name.name="readWebSocket"] BinaryExpression[left.name="frame"]',
       expect: 1,
@@ -163,6 +176,7 @@ module.exports = [
     },
     {
       id: 'client-generation-release',
+      description: 'Release the peer generation when the native socket closes.',
       target: target('lib/client.js'),
       select: 'MethodDeclaration[name.name="readWebSocket"] TryStatement > Block:has(CallExpression[expression.name.name="removeEventListener"])',
       expect: 1,
@@ -173,6 +187,7 @@ module.exports = [
     },
     {
       id: 'client-binding',
+      description: 'Expose the browser bidirectional binding and RPC interception API.',
       target: target('lib/client.js'),
       select: 'FunctionDeclaration[name.name="apply"] VariableDeclaration[name.name="rpc"]',
       expect: 1,

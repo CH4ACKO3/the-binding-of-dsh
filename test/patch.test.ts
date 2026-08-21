@@ -10,6 +10,13 @@ const require = createRequire(import.meta.url)
 const declaration = require('../patches/connection.patch.cjs')
 const gatewayDeclaration = require('../patches/gateway.patch.cjs')
 
+test('describes every Harmony patch', () => {
+  for (const patch of [...declaration, ...gatewayDeclaration]) {
+    assert.equal(typeof patch.description, 'string', `${patch.id} description type`)
+    assert.notEqual(patch.description.trim(), '', `${patch.id} description`)
+  }
+})
+
 function targetPath(member) {
   const packagePath = require.resolve(`${member.target.package}/package.json`)
   return new URL(member.target.file, `file://${packagePath}`).pathname
