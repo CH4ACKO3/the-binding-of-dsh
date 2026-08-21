@@ -1,26 +1,18 @@
-name: Publish
+name: Release
 
 on:
-  release:
-    types: [published]
-  workflow_call:
-    inputs:
-      tag:
-        required: true
-        type: string
-
-permissions:
-  contents: read
-  id-token: write
+  push:
+    tags: ["v*"]
 
 jobs:
   npm:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.tag || github.event.release.tag_name }}
       - uses: actions/setup-node@v7
         with:
           node-version: 24.11.1
@@ -28,7 +20,7 @@ jobs:
           package-manager-cache: false
       - name: Verify release tag
         env:
-          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: >-
           node -e "const expected = 'v' + require('./package.json').version;
           if (process.env.RELEASE_TAG !== expected) {
@@ -37,3 +29,19 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm publish --access public
+
+  github:
+    needs: npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          --repo "$GITHUB_REPOSITORY"
+          --verify-tag
+          --generate-notes
+          --title "$GITHUB_REF_NAME"
