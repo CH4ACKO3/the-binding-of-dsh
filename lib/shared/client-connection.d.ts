@@ -12,6 +12,7 @@ export interface ClientConnectionBinding {
 export interface ClientConnectionBindingOptions {
     fetch?: typeof globalThis.fetch;
     baseUrl?: () => string;
+    kind?: 'browser' | 'node';
 }
 export declare function createClientConnectionBinding(options?: ClientConnectionBindingOptions): ClientConnectionBinding;
 declare module '@deepseek-ai/dsh-client-connection/client' {

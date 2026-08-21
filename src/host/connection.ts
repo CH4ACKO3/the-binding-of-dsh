@@ -65,7 +65,11 @@ function clientResponse(value: unknown): ClientResponse | undefined {
     || typeof message.result !== 'object' || message.result === null
     || typeof message.result.ok !== 'boolean') return undefined
   if (message.result.ok) {
-    return Object.hasOwn(message.result, 'value') ? message as ClientResponse : undefined
+    return {
+      type: message.type,
+      rpcId: message.rpcId,
+      result: { ok: true, value: message.result.value },
+    }
   }
   const error = message.result.error
   return typeof error === 'object' && error !== null

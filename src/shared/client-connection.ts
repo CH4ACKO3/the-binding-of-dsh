@@ -49,6 +49,7 @@ interface ActiveGeneration extends ClientConnectionGeneration {
 export interface ClientConnectionBindingOptions {
   fetch?: typeof globalThis.fetch
   baseUrl?: () => string
+  kind?: 'browser' | 'node'
 }
 
 const INTERNAL_BASE = 'http://dsh.internal'
@@ -57,6 +58,7 @@ export function createClientConnectionBinding(
   options: ClientConnectionBindingOptions = {},
 ): ClientConnectionBinding {
   const fetch = options.fetch ?? globalThis.fetch
+  const kind = options.kind
   const baseUrl = options.baseUrl ?? (() => {
     const location = globalThis.location
     return location?.origin !== undefined && location.origin !== 'null'
@@ -143,6 +145,10 @@ export function createClientConnectionBinding(
       opening ??= (async () => {
         const response = await fetch(new URL(CONNECTION_OPEN_PATH, baseUrl()), {
           method: 'POST',
+          ...(kind === undefined ? {} : {
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ kind }),
+          }),
           signal,
         })
         if (!response.ok) throw new Error(`Connection open failed with HTTP ${response.status}`)

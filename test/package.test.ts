@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
+import { runInNewContext } from 'node:vm'
 import {
   GatewayDispatchError,
   HostRemoteService,
@@ -27,6 +28,24 @@ test('builds a DSH browser module', async () => {
   const source = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
   assert.match(source, /window\.__ModuleLoader__\.load\(/)
   assert.match(source, /id: "the-binding-of-dsh"/)
+})
+
+test('browser module exposes the Connection binding used by its Harmony patch', async () => {
+  const source = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
+  let definition
+  runInNewContext(source, {
+    AbortController,
+    window: {
+      __ModuleLoader__: {
+        load(value) {
+          definition = value
+        },
+      },
+    },
+  })
+  assert.equal(definition.id, 'the-binding-of-dsh')
+  const exports = definition.factory(() => assert.fail('browser module has no external dependency'))
+  assert.equal(typeof exports.createClientConnectionBinding, 'function')
 })
 
 test('ships built files without an install-time build script', async () => {

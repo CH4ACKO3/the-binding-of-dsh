@@ -6,7 +6,7 @@ import WebSocket, { WebSocketServer } from 'ws'
 import { HostConnectionBinding } from '../lib/host/connection.js'
 import { createClientConnectionBinding } from '../lib/shared/client-connection.js'
 
-test('Host and Client complete a reverse call over real HTTP and WebSocket carriers', async t => {
+test('Host and Client complete reverse calls including void results over real carriers', async t => {
   const host = new HostConnectionBinding()
   let origin
   let client
@@ -49,10 +49,11 @@ test('Host and Client complete a reverse call over real HTTP and WebSocket carri
   origin = `http://127.0.0.1:${address.port}`
 
   client = createClientConnectionBinding({ baseUrl: () => origin })
-  client.intercept('/api', endpoint => endpoint === 'echo/run', async (_endpoint, payload) => ({
-    ok: true,
-    value: payload.value + 1,
-  }))
+  client.intercept('/api', endpoint => endpoint === 'echo/run' || endpoint === 'echo/void', async (endpoint, payload) => (
+    endpoint === 'echo/void'
+      ? { ok: true, value: undefined }
+      : { ok: true, value: payload.value + 1 }
+  ))
   generation = await client.open()
   mux = new WebSocket(`${origin.replace('http:', 'ws:')}/api/events.mux`, generation.id)
   downlink = new WebSocket(`${origin.replace('http:', 'ws:')}/api/events.host`, generation.id)
@@ -69,5 +70,9 @@ test('Host and Client complete a reverse call over real HTTP and WebSocket carri
   assert.deepEqual(await peer.call('/api', 'echo/run', { value: 1 }), {
     ok: true,
     value: 2,
+  })
+  assert.deepEqual(await peer.call('/api', 'echo/void', {}), {
+    ok: true,
+    value: undefined,
   })
 })

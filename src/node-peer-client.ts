@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
-import { serverResponseSchema } from '@deepseek-ai/dsh-host-apiproxy/api/rpc.schema'
+import {
+  serverRequestSchema,
+  serverResponseSchema,
+} from '@deepseek-ai/dsh-host-apiproxy/api/rpc.schema'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import type {
   TypertDisposer,
@@ -12,7 +15,13 @@ import {
   type PeerRemoteApi,
   type TypertRemoteCaller,
 } from './shared/peer-remote.js'
-import { CONNECTION_OPEN_PATH, type RpcResult } from './shared/protocol.js'
+import {
+  createClientConnectionBinding,
+  type ClientConnectionBinding,
+  type ClientConnectionGeneration,
+  type ClientConnectionHandler,
+} from './shared/client-connection.js'
+import { type RpcResult } from './shared/protocol.js'
 
 const MUX_PATH = '/api/events.mux'
 const HOST_PATH = '/api/events.host'
@@ -20,12 +29,13 @@ const HOST_PATH = '/api/events.host'
 interface WebSocketLike {
   readonly readyState: number
   addEventListener(event: 'open' | 'close' | 'error', listener: (event: Event) => void, options?: { once?: boolean }): void
+  addEventListener(event: 'message', listener: (event: { data: unknown }) => void): void
   removeEventListener(event: 'open' | 'close' | 'error', listener: (event: Event) => void): void
   close(): void
 }
 
 interface Generation {
-  readonly id: string
+  readonly connection: ClientConnectionGeneration
   readonly mux: WebSocketLike
   readonly host: WebSocketLike
   readonly abort: AbortController
@@ -41,6 +51,11 @@ export interface NodePeerClientOptions {
 
 export interface NodePeerClientHandle {
   readonly remote: PeerRemoteApi
+  intercept(
+    channel: string,
+    matches: (endpoint: string) => boolean,
+    handler: ClientConnectionHandler,
+  ): () => void
   connect(signal?: AbortSignal): Promise<void>
   close(): Promise<void>
 }
@@ -51,6 +66,7 @@ export class NodePeerClient implements NodePeerClientHandle {
   private readonly baseUrl: URL
   private readonly contribution: TypertRemoteContribution
   private readonly createWebSocket: (url: string, protocol: string) => WebSocketLike
+  private readonly connection: ClientConnectionBinding
   private readonly projector: PeerRemoteProjector
   private readonly caller: TypertRemoteCaller
   private generation: Generation | undefined
@@ -68,11 +84,24 @@ export class NodePeerClient implements NodePeerClientHandle {
     this.contribution = options.contribution
     this.createWebSocket = options.createWebSocket
       ?? ((url, protocol) => new WebSocket(url, protocol) as unknown as WebSocketLike)
+    this.connection = createClientConnectionBinding({
+      fetch: this.fetch,
+      baseUrl: () => this.baseUrl.href,
+      kind: 'node',
+    })
     this.projector = new PeerRemoteProjector(this.ctx)
     this.caller = { call: (channel, endpoint, payload, signal) => (
       this.call(channel, endpoint, payload, signal)
     ) }
     this.remote = this.projector.bind(this.caller, this.ctx)
+  }
+
+  intercept(
+    channel: string,
+    matches: (endpoint: string) => boolean,
+    handler: ClientConnectionHandler,
+  ): () => void {
+    return this.connection.intercept(channel, matches, handler)
   }
 
   connect(signal?: AbortSignal): Promise<void> {
@@ -103,6 +132,7 @@ export class NodePeerClient implements NodePeerClientHandle {
     if (generation !== undefined) {
       generation.active = false
       generation.abort.abort(reason)
+      this.connection.release(generation.connection)
       generation.mux.close()
       generation.host.close()
     }
@@ -122,27 +152,28 @@ export class NodePeerClient implements NodePeerClientHandle {
     this.mounting ??= this.projector.mount(this.ctx, this.contribution)
     this.disposeRemote = await this.mounting
     try {
-      const response = await this.fetch(new URL(CONNECTION_OPEN_PATH, this.baseUrl), {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ kind: 'node' }),
-        signal,
-      })
-      if (!response.ok) throw new Error(`Connection open failed with HTTP ${response.status}`)
-      const body = await response.json() as { id?: unknown }
-      if (typeof body.id !== 'string' || body.id === '') {
-        throw new Error('Connection open returned no peer id')
-      }
+      const connection = await this.connection.open(signal)
       const abort = new AbortController()
       const generation: Generation = {
-        id: body.id,
-        mux: this.createWebSocket(webSocketUrl(this.baseUrl, MUX_PATH), body.id),
-        host: this.createWebSocket(webSocketUrl(this.baseUrl, HOST_PATH), body.id),
+        connection,
+        mux: this.createWebSocket(webSocketUrl(this.baseUrl, MUX_PATH), connection.id),
+        host: this.createWebSocket(webSocketUrl(this.baseUrl, HOST_PATH), connection.id),
         abort,
         active: false,
       }
       this.generation = generation
+      const receive = (event: { data: unknown }): void => {
+        if (this.generation !== generation || abort.signal.aborted) return
+        try {
+          const message = serverRequestSchema.parse(JSON.parse(webSocketText(event.data)))
+          this.connection.handle(message, generation.connection)
+        } catch (error) {
+          console.error('[the-binding-of-dsh] dropping malformed Node peer frame:', error)
+        }
+      }
       const failed = (): void => this.fail(generation, new Error('Node peer connection closed'))
+      generation.mux.addEventListener('message', receive)
+      generation.host.addEventListener('message', receive)
       generation.mux.addEventListener('close', failed)
       generation.host.addEventListener('close', failed)
       generation.mux.addEventListener('error', failed)
@@ -195,8 +226,7 @@ export class NodePeerClient implements NodePeerClientHandle {
 
   private fail(generation: Generation, error: Error): void {
     if (this.generation !== generation || generation.abort.signal.aborted) return
-    generation.active = false
-    generation.abort.abort(error)
+    this.dropGeneration(error)
   }
 }
 
@@ -204,6 +234,15 @@ function webSocketUrl(baseUrl: URL, path: string): string {
   const url = new URL(path, baseUrl)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   return url.href
+}
+
+function webSocketText(data: unknown): string {
+  if (typeof data === 'string') return data
+  if (data instanceof ArrayBuffer) return Buffer.from(data).toString()
+  if (ArrayBuffer.isView(data)) {
+    return Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString()
+  }
+  throw new TypeError('binary WebSocket frame')
 }
 
 function waitForOpen(socket: WebSocketLike, signal: AbortSignal): Promise<void> {

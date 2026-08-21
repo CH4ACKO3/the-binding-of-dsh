@@ -29,7 +29,7 @@ const descriptors = ['echo', 'wait'].map(method => ({
   result: stringCodec,
 }))
 
-test('Node peer uses the existing HTTP and two-WebSocket Connection carrier', async t => {
+test('Node peer completes calls in both directions over the existing Connection carrier', async t => {
   const host = new HostConnectionBinding()
   const sockets = new WebSocketServer({ noServer: true })
   let origin
@@ -78,7 +78,13 @@ test('Node peer uses the existing HTTP and two-WebSocket Connection carrier', as
     baseUrl: origin,
     contribution: { package: 'node-peer-test', descriptors },
   })
+  const disposeInbound = client.intercept(
+    '/api',
+    endpoint => endpoint === 'echo/reverse',
+    async (_endpoint, payload) => ({ ok: true, value: `host:${payload.value}` }),
+  )
   t.after(async () => {
+    disposeInbound()
     releaseWait()
     await client.close()
     host.dispose()
@@ -91,6 +97,10 @@ test('Node peer uses the existing HTTP and two-WebSocket Connection carrier', as
   const peer = host.peers.list()[0]
   assert.ok(peer)
   assert.equal(peer.kind, 'node')
+  assert.deepEqual(await peer.call('/api', 'echo/reverse', { value: 'hello' }), {
+    ok: true,
+    value: 'host:hello',
+  })
   assert.deepEqual(await client.remote.echo.echo('hello'), {
     ok: true,
     value: 'node:hello',
