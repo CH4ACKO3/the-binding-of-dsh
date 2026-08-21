@@ -7,8 +7,8 @@ import MagicString from 'magic-string'
 import ts from 'typescript'
 
 const require = createRequire(import.meta.url)
-const declaration = require('../patches/connection.patch.cts')
-const gatewayDeclaration = require('../patches/gateway.patch.cts')
+const declaration = require('../patches/connection.patch.cjs')
+const gatewayDeclaration = require('../patches/gateway.patch.cjs')
 
 function targetPath(member) {
   const packagePath = require.resolve(`${member.target.package}/package.json`)

@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { copyFile, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import test from 'node:test'
 import { runInNewContext } from 'node:vm'
 import {
@@ -55,4 +58,19 @@ test('ships built files without an install-time build script', async () => {
   assert.equal(typeof manifest.exports['./browser-peer'].default, 'string')
   assert.equal(manifest.exports['./host/connection'].default, './lib/host/connection.js')
   assert.equal(manifest.exports['./host/gateway'].default, './lib/host/gateway.js')
+})
+
+test('ships CommonJS patches loadable from node_modules', async (context) => {
+  const root = await mkdtemp(join(tmpdir(), 'the-binding-of-dsh-package-'))
+  context.after(() => rm(root, { recursive: true, force: true }))
+  const packageDir = join(root, 'node_modules', 'the-binding-of-dsh')
+  const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+
+  for (const patch of manifest.dsh.harmony.patches) {
+    assert.match(patch, /\.cjs$/)
+    const destination = join(packageDir, patch)
+    await mkdir(dirname(destination), { recursive: true })
+    await copyFile(new URL(`..${patch.slice(1)}`, import.meta.url), destination)
+    assert.ok(createRequire(join(root, 'consumer.cjs'))(destination))
+  }
 })
