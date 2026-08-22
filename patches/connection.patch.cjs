@@ -4,6 +4,12 @@ const target = file => ({
   file,
 })
 
+const clientModulesTarget = file => ({
+  package: '@deepseek-ai/dsh-client-modules',
+  version: '>=0.1.0-rc.8 <0.2.0',
+  file,
+})
+
 function variableStatement(node, ts) {
   let current = node
   while (current !== undefined && !ts.isVariableStatement(current)) current = current.parent
@@ -204,17 +210,20 @@ module.exports = [
       },
     },
     {
-      id: 'client-module-external',
-      description: 'Declare the Binding module before the patched Connection factory loads.',
-      target: target('package.json'),
-      select: 'SourceFile',
+      id: 'client-module-graph-external',
+      description: 'Order the Binding factory before the patched Connection factory.',
+      target: clientModulesTarget('lib/index.js'),
+      select: 'MethodDeclaration[name.name="resolveMeta"] VariableDeclaration[name.name="meta"] PropertyAssignment[name.name="external"]',
       expect: 1,
-      apply({ source, edit }) {
-        const manifest = JSON.parse(source)
-        const external = manifest.dsh.client.external ?? []
-        if (!external.includes('the-binding-of-dsh')) external.push('the-binding-of-dsh')
-        manifest.dsh.client.external = external
-        edit.overwrite(0, source.length, `${JSON.stringify(manifest, null, 2)}\n`)
+      apply({ node, sourceFile, edit }) {
+        const initializer = node.initializer
+        if (initializer === undefined) throw new Error('Client module external initializer missing')
+        edit.overwrite(initializer.getStart(sourceFile), initializer.getEnd(), `
+pkgName === "@deepseek-ai/dsh-client-connection"
+	? decl.external?.includes("the-binding-of-dsh")
+		? decl.external
+		: [...(decl.external ?? []), "the-binding-of-dsh"]
+	: decl.external ?? []`)
       },
     },
 ]

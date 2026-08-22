@@ -103,6 +103,7 @@ test('ships built files without an install-time build script', async () => {
     '@deepseek-ai/cordis': { optional: true },
     '@deepseek-ai/dsh-api-gateway': { optional: true },
     '@deepseek-ai/dsh-client-connection': { optional: true },
+    '@deepseek-ai/dsh-client-modules': { optional: true },
     '@deepseek-ai/dsh-host-apiproxy': { optional: true },
     '@deepseek-ai/dsh-typert-protocol': { optional: true },
     '@deepseek-ai/dsh-typert-registry': { optional: true },
