@@ -1,7 +1,12 @@
+import type { Context } from '@deepseek-ai/cordis'
+import { installClientGateway } from '../shared/client-gateway.js'
+
 export const inject = ['connection', 'typert']
 
 /** Browser entrypoint loaded after the native Connection and Typert registry. */
-export function apply(): void {}
+export function apply(ctx: Context): void {
+  installClientGateway(ctx)
+}
 
 export { createClientConnectionBinding } from '../shared/client-connection.js'
-export { installClientGateway } from '../shared/client-gateway.js'
+export { installClientGateway }

@@ -1,4 +1,4 @@
 - insert:
     - id: the-binding-of-dsh
       name: the-binding-of-dsh
-      inject: [harmony]
+      inject: [harmony, typert]

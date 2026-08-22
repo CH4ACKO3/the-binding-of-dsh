@@ -8,10 +8,9 @@ import ts from 'typescript'
 
 const require = createRequire(import.meta.url)
 const declaration = require('../patches/connection.patch.cjs')
-const gatewayDeclaration = require('../patches/gateway.patch.cjs')
 
 test('describes every Harmony patch', () => {
-  for (const patch of [...declaration, ...gatewayDeclaration]) {
+  for (const patch of declaration) {
     assert.equal(typeof patch.description, 'string', `${patch.id} description type`)
     assert.notEqual(patch.description.trim(), '', `${patch.id} description`)
   }
@@ -37,7 +36,7 @@ async function applyPatch(declaration) {
   return sources
 }
 
-test('Connection Harmony patch binds and produces parseable rc.8 sources', async () => {
+test('Connection Harmony patch binds and produces parseable sources', async () => {
   assert.equal(declaration.length, 15)
   const sources = await applyPatch(declaration)
   assert.equal(sources.size, 2)
@@ -59,25 +58,4 @@ test('Connection Harmony patch binds and produces parseable rc.8 sources', async
   assert.match(client, /new WebSocket\(url, generation\.id\)/)
   assert.match(client, /this\.bidirectional\?\.handle\(full, generation\)/)
   assert.match(client, /require\("the-binding-of-dsh"\)\.createClientConnectionBinding\(\)/)
-})
-
-test('Gateway Harmony patch binds and produces parseable rc.8 sources', async () => {
-  assert.equal(gatewayDeclaration.length, 3)
-  const sources = await applyPatch(gatewayDeclaration)
-  assert.equal(sources.size, 2)
-  for (const [path, source] of sources) {
-    const parsed = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
-    assert.deepEqual(parsed.parseDiagnostics, [], `${path} has parse diagnostics`)
-  }
-
-  const hostPath = require.resolve('@deepseek-ai/dsh-api-gateway')
-  const host = sources.get(hostPath)
-  assert.match(host, /createHostGatewayDispatcher/)
-  assert.ok(host.indexOf('super(ctx, "typertGateway")') < host.indexOf('const bidirectionalGateway'))
-  assert.match(host, /new HostRemoteService\(ctx\)/)
-  assert.match(host, /bidirectionalGateway\.invokeRpc/)
-
-  const clientPath = require.resolve('@deepseek-ai/dsh-api-gateway/client')
-  const client = sources.get(clientPath)
-  assert.match(client, /require\("the-binding-of-dsh"\)\.installClientGateway\(ctx\)/)
 })

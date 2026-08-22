@@ -5,6 +5,8 @@ import { dirname, join } from 'node:path'
 import { copyFile, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import test from 'node:test'
 import { runInNewContext } from 'node:vm'
+import { Context } from '@deepseek-ai/cordis'
+import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import {
   GatewayDispatchError,
   HostRemoteService,
@@ -18,7 +20,7 @@ import {
 
 test('exports the Host plugin entrypoint', () => {
   assert.equal(name, 'the-binding-of-dsh')
-  assert.deepEqual(inject, ['harmony'])
+  assert.deepEqual(inject, ['harmony', 'typert'])
   assert.equal(typeof apply, 'function')
   assert.equal(typeof createGatewayDispatcher, 'function')
   assert.equal(typeof installClientGateway, 'function')
@@ -27,13 +29,27 @@ test('exports the Host plugin entrypoint', () => {
   assert.equal(typeof GatewayDispatchError, 'function')
 })
 
+test('Host entrypoint installs the peer-bound Remote service', async () => {
+  const root = new Context()
+  const fiber = root.plugin({
+    name: 'host-entrypoint-test',
+    apply(ctx) {
+      new TypertRegistry(ctx)
+      apply(ctx)
+    },
+  })
+  await fiber
+  assert.ok(fiber.ctx.remote instanceof HostRemoteService)
+  await fiber.dispose()
+})
+
 test('builds a DSH browser module', async () => {
   const source = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
   assert.match(source, /window\.__ModuleLoader__\.load\(/)
   assert.match(source, /id: "the-binding-of-dsh"/)
 })
 
-test('browser module exposes the Connection binding used by its Harmony patch', async () => {
+test('Client entrypoint installs the Gateway and exposes its Connection binding', async () => {
   const source = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
   let definition
   runInNewContext(source, {
@@ -48,6 +64,30 @@ test('browser module exposes the Connection binding used by its Harmony patch', 
   })
   assert.equal(definition.id, 'the-binding-of-dsh')
   const exports = definition.factory(() => assert.fail('browser module has no external dependency'))
+  const state = { registration: undefined, dispose: undefined }
+  exports.apply({
+    get(name) {
+      assert.equal(name, 'connection')
+      return {
+        rpc: {
+          intercept(channel, matches, handler) {
+            state.registration = { channel, matches, handler }
+            return () => {}
+          },
+        },
+      }
+    },
+    on() {
+      return () => {}
+    },
+    effect(factory) {
+      state.dispose = factory()
+    },
+  })
+  assert.equal(state.registration.channel, '/api')
+  assert.equal(typeof state.registration.matches, 'function')
+  assert.equal(typeof state.registration.handler, 'function')
+  assert.equal(typeof state.dispose, 'function')
   assert.equal(typeof exports.createClientConnectionBinding, 'function')
 })
 
@@ -58,6 +98,7 @@ test('ships built files without an install-time build script', async () => {
   assert.equal(typeof manifest.exports['./browser-peer'].default, 'string')
   assert.equal(manifest.exports['./host/connection'].default, './lib/host/connection.js')
   assert.equal(manifest.exports['./host/gateway'].default, './lib/host/gateway.js')
+  assert.deepEqual(manifest.dsh.harmony.patches, ['./patches/connection.patch.cjs'])
 })
 
 test('ships CommonJS patches loadable from node_modules', async (context) => {

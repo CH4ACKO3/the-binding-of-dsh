@@ -1,6 +1,6 @@
 const target = file => ({
   package: '@deepseek-ai/dsh-client-connection',
-  version: '^0.1.0-rc.7',
+  version: '>=0.1.0-rc.7 <0.2.0',
   file,
 })
 

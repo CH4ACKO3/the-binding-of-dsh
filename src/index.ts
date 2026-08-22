@@ -1,8 +1,13 @@
-export const name = 'the-binding-of-dsh'
-export const inject = ['harmony']
+import type { Context } from '@deepseek-ai/cordis'
+import { HostRemoteService } from './host/gateway.js'
 
-/** Host entrypoint. Connection and Gateway hooks are added by Harmony patches. */
-export function apply(): void {}
+export const name = 'the-binding-of-dsh'
+export const inject = ['harmony', 'typert']
+
+/** Host entrypoint exposing peer-bound Remote calls. */
+export function apply(ctx: Context): void {
+  new HostRemoteService(ctx)
+}
 
 export { NodePeerClient } from './node-peer-client.js'
 export type {
@@ -16,8 +21,8 @@ export {
 } from './host/connection.js'
 export {
   createHostGatewayDispatcher,
-  HostRemoteService,
 } from './host/gateway.js'
+export { HostRemoteService }
 export {
   GatewayDispatchError,
   createGatewayDispatcher,
