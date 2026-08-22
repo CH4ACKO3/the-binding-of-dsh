@@ -11,12 +11,19 @@ import ts from 'typescript'
 
 const require = createRequire(import.meta.url)
 const declaration = require('../patches/connection.patch.cjs')
+const members = declaration.flatMap(patch => patch.patches ?? [patch])
 
 test('describes every Harmony patch', () => {
-  for (const patch of declaration) {
+  for (const patch of [...declaration, ...members]) {
     assert.equal(typeof patch.description, 'string', `${patch.id} description type`)
     assert.notEqual(patch.description.trim(), '', `${patch.id} description`)
   }
+})
+
+test('ships one atomic Harmony patch for the complete integration', () => {
+  assert.equal(declaration.length, 1)
+  assert.equal(declaration[0].id, 'bidirectional-connection')
+  assert.equal(declaration[0].patches.length, 17)
 })
 
 function targetPath(member) {
@@ -40,16 +47,16 @@ async function applyPatch(declaration) {
 }
 
 test('Connection Harmony patch binds and produces parseable sources', async () => {
-  assert.equal(declaration.length, 17)
+  assert.equal(members.length, 17)
   assert.equal(
-    declaration.filter(patch => patch.target.package === '@deepseek-ai/dsh-client-connection').length,
+    members.filter(patch => patch.target.package === '@deepseek-ai/dsh-client-connection').length,
     15,
   )
   assert.equal(
-    declaration.filter(patch => patch.target.package === '@deepseek-ai/dsh-client-modules').length,
+    members.filter(patch => patch.target.package === '@deepseek-ai/dsh-client-modules').length,
     2,
   )
-  const sources = await applyPatch(declaration)
+  const sources = await applyPatch(members)
   assert.equal(sources.size, 3)
   for (const [path, source] of sources) {
     const parsed = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)

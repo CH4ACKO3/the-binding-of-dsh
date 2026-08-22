@@ -19,8 +19,11 @@ function variableStatement(node, ts) {
   return current
 }
 
-/** @type {import('dsh-harmony').HarmonyPatch[]} */
-module.exports = [
+/** @type {import('dsh-harmony').HarmonyPatchDeclaration[]} */
+module.exports = [{
+  id: 'bidirectional-connection',
+  description: 'Install the complete bidirectional Connection and client module graph integration.',
+  patches: [
     {
       id: 'host-imports',
       description: 'Import the bidirectional Connection host binding.',
@@ -239,4 +242,5 @@ pkgName === "@deepseek-ai/dsh-client-connection"
 	: decl.external ?? []`)
       },
     },
-]
+  ],
+}]
