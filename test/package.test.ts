@@ -99,6 +99,15 @@ test('ships built files without an install-time build script', async () => {
   assert.equal(manifest.exports['./host/connection'].default, './lib/host/connection.js')
   assert.equal(manifest.exports['./host/gateway'].default, './lib/host/gateway.js')
   assert.deepEqual(manifest.dsh.harmony.patches, ['./patches/connection.patch.cjs'])
+  assert.deepEqual(manifest.peerDependenciesMeta, {
+    '@deepseek-ai/cordis': { optional: true },
+    '@deepseek-ai/dsh-api-gateway': { optional: true },
+    '@deepseek-ai/dsh-client-connection': { optional: true },
+    '@deepseek-ai/dsh-host-apiproxy': { optional: true },
+    '@deepseek-ai/dsh-typert-protocol': { optional: true },
+    '@deepseek-ai/dsh-typert-registry': { optional: true },
+  })
+  assert.equal(manifest.peerDependenciesMeta['dsh-harmony'], undefined)
 })
 
 test('ships CommonJS patches loadable from node_modules', async (context) => {
