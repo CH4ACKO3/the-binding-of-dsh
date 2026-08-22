@@ -10,6 +10,8 @@ const clientModulesTarget = file => ({
   file,
 })
 
+const bindingManifestPath = require.resolve('../package.json')
+
 function variableStatement(node, ts) {
   let current = node
   while (current !== undefined && !ts.isVariableStatement(current)) current = current.parent
@@ -207,6 +209,17 @@ module.exports = [
 \t\t\t\tapi.bidirectional = bidirectional;
 \t\t\t\trpc.intercept = bidirectional.intercept;
 \t\t\t}`)
+      },
+    },
+    {
+      id: 'client-module-provider-resolution',
+      description: 'Resolve the nested Binding provider when composing the client module graph.',
+      target: clientModulesTarget('lib/index.js'),
+      select: 'MethodDeclaration[name.name="resolveMeta"] CallExpression[expression.name.name="resolvePkgJson"]',
+      expect: 1,
+      apply({ node, sourceFile, edit }) {
+        edit.overwrite(node.getStart(sourceFile), node.getEnd(),
+          `pkgName === "the-binding-of-dsh" ? ${JSON.stringify(bindingManifestPath)} : ${node.getText(sourceFile)}`)
       },
     },
     {

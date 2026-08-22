@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import test from 'node:test'
+import { pathToFileURL } from 'node:url'
 import { tsquery } from '@phenomnomnominal/tsquery'
 import MagicString from 'magic-string'
 import ts from 'typescript'
@@ -37,10 +40,14 @@ async function applyPatch(declaration) {
 }
 
 test('Connection Harmony patch binds and produces parseable sources', async () => {
-  assert.equal(declaration.length, 16)
+  assert.equal(declaration.length, 17)
   assert.equal(
     declaration.filter(patch => patch.target.package === '@deepseek-ai/dsh-client-connection').length,
     15,
+  )
+  assert.equal(
+    declaration.filter(patch => patch.target.package === '@deepseek-ai/dsh-client-modules').length,
+    2,
   )
   const sources = await applyPatch(declaration)
   assert.equal(sources.size, 3)
@@ -86,4 +93,43 @@ test('Connection Harmony patch binds and produces parseable sources', async () =
     ['the-binding-of-dsh'],
   )
   assert.deepEqual(resolveExternal('other-package', {}), [])
+
+  const runtimeRoot = await mkdtemp(join(tmpdir(), 'the-binding-of-dsh-client-graph-'))
+  try {
+    await symlink(resolve('node_modules'), join(runtimeRoot, 'node_modules'), 'dir')
+    const runtimePath = join(runtimeRoot, 'client-modules.mjs')
+    await writeFile(runtimePath, modules)
+    const { ClientModuleRegistry } = await import(pathToFileURL(runtimePath).href)
+    const names = [
+      '@deepseek-ai/dsh-client-connection',
+      'the-binding-of-dsh',
+    ]
+    const registry = Object.create(ClientModuleRegistry.prototype)
+    registry.pkgMeta = new Map()
+    registry.table = new Map()
+    registry.ctx = {
+      loader: {
+        entries: () => names.map(name => ({ options: { name }, fiber: {}, disabled: false })),
+      },
+    }
+    registry.resolvePkgJson = (name) => {
+      if (name === 'the-binding-of-dsh') throw new Error('not installed at the profile root')
+      return require.resolve(`${name}/package.json`)
+    }
+    registry.initialBundleRevision = () => 'test-rev'
+
+    assert.equal(registry.processOne('@deepseek-ai/dsh-client-connection'), true)
+    assert.equal(registry.processOne('the-binding-of-dsh'), true)
+    const graph = registry.compose()
+    assert.deepEqual(graph.entries.map(entry => entry.id), [
+      'the-binding-of-dsh',
+      '@deepseek-ai/dsh-client-connection',
+    ])
+    assert.deepEqual(
+      graph.entries.find(entry => entry.id === '@deepseek-ai/dsh-client-connection').external,
+      ['the-binding-of-dsh'],
+    )
+  } finally {
+    await rm(runtimeRoot, { recursive: true, force: true })
+  }
 })

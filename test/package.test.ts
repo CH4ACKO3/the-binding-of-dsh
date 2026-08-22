@@ -116,6 +116,8 @@ test('ships CommonJS patches loadable from node_modules', async (context) => {
   context.after(() => rm(root, { recursive: true, force: true }))
   const packageDir = join(root, 'node_modules', 'the-binding-of-dsh')
   const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+  await mkdir(packageDir, { recursive: true })
+  await copyFile(new URL('../package.json', import.meta.url), join(packageDir, 'package.json'))
 
   for (const patch of manifest.dsh.harmony.patches) {
     assert.match(patch, /\.cjs$/)
