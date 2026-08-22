@@ -37,10 +37,15 @@ async function applyPatch(declaration) {
 }
 
 test('Connection Harmony patch binds and produces parseable sources', async () => {
-  assert.equal(declaration.length, 15)
+  assert.equal(declaration.length, 16)
+  assert.equal(declaration.filter(patch => patch.target.file.endsWith('.js')).length, 15)
   const sources = await applyPatch(declaration)
-  assert.equal(sources.size, 2)
+  assert.equal(sources.size, 3)
   for (const [path, source] of sources) {
+    if (path.endsWith('package.json')) {
+      assert.doesNotThrow(() => JSON.parse(source), `${path} is valid JSON`)
+      continue
+    }
     const parsed = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
     assert.deepEqual(parsed.parseDiagnostics, [], `${path} has parse diagnostics`)
   }
@@ -58,4 +63,22 @@ test('Connection Harmony patch binds and produces parseable sources', async () =
   assert.match(client, /new WebSocket\(url, generation\.id\)/)
   assert.match(client, /this\.bidirectional\?\.handle\(full, generation\)/)
   assert.match(client, /require\("the-binding-of-dsh"\)\.createClientConnectionBinding\(\)/)
+
+  const manifestPath = require.resolve('@deepseek-ai/dsh-client-connection/package.json')
+  const manifestSource = sources.get(manifestPath)
+  const manifest = JSON.parse(manifestSource)
+  assert.deepEqual(manifest.dsh.client.external, ['the-binding-of-dsh'])
+
+  const manifestPatch = declaration.find(patch => patch.id === 'client-module-external')
+  const sourceFile = ts.createSourceFile(
+    manifestPath,
+    manifestSource,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  )
+  const edit = new MagicString(manifestSource)
+  manifestPatch.apply({ node: sourceFile, source: manifestSource, sourceFile, edit, ts })
+  const repeated = JSON.parse(edit.toString()).dsh.client.external
+  assert.equal(repeated.filter(name => name === 'the-binding-of-dsh').length, 1)
 })

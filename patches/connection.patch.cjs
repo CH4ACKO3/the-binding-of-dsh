@@ -203,4 +203,18 @@ module.exports = [
 \t\t\t}`)
       },
     },
+    {
+      id: 'client-module-external',
+      description: 'Declare the Binding module before the patched Connection factory loads.',
+      target: target('package.json'),
+      select: 'SourceFile',
+      expect: 1,
+      apply({ source, edit }) {
+        const manifest = JSON.parse(source)
+        const external = manifest.dsh.client.external ?? []
+        if (!external.includes('the-binding-of-dsh')) external.push('the-binding-of-dsh')
+        manifest.dsh.client.external = external
+        edit.overwrite(0, source.length, `${JSON.stringify(manifest, null, 2)}\n`)
+      },
+    },
 ]
