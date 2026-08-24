@@ -1,9 +1,5 @@
-import { randomUUID } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
-import {
-  serverRequestSchema,
-  serverResponseSchema,
-} from '@deepseek-ai/dsh-host-apiproxy/api/rpc.schema'
+import { serverRequestSchema } from '@deepseek-ai/dsh-host-apiproxy/api/rpc.schema'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import type {
   TypertDisposer,
@@ -28,9 +24,11 @@ const HOST_PATH = '/api/events.host'
 
 interface WebSocketLike {
   readonly readyState: number
+  readonly bufferedAmount?: number
   addEventListener(event: 'open' | 'close' | 'error', listener: (event: Event) => void, options?: { once?: boolean }): void
   addEventListener(event: 'message', listener: (event: { data: unknown }) => void): void
   removeEventListener(event: 'open' | 'close' | 'error', listener: (event: Event) => void): void
+  send(data: string): void
   close(): void
 }
 
@@ -162,11 +160,13 @@ export class NodePeerClient implements NodePeerClientHandle {
         active: false,
       }
       this.generation = generation
+      this.connection.attach(connection, 'host', generation.host)
       const receive = (event: { data: unknown }): void => {
         if (this.generation !== generation || abort.signal.aborted) return
         try {
-          const message = serverRequestSchema.parse(JSON.parse(webSocketText(event.data)))
-          this.connection.handle(message, generation.connection)
+          const raw = JSON.parse(webSocketText(event.data))
+          if (this.connection.handle(raw, generation.connection)) return
+          serverRequestSchema.parse(raw)
         } catch (error) {
           console.error('[the-binding-of-dsh] dropping malformed Node peer frame:', error)
         }
@@ -202,26 +202,7 @@ export class NodePeerClient implements NodePeerClientHandle {
     const requestSignal = signal === undefined
       ? generation.abort.signal
       : AbortSignal.any([generation.abort.signal, signal])
-    const rpcId = randomUUID()
-    const response = await this.fetch(new URL(`${channel}/${endpoint}`, this.baseUrl), {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        type: 'client-request',
-        rpcId,
-        method: endpoint,
-        payload,
-      }),
-      signal: requestSignal,
-    })
-    if (!response.ok) {
-      throw new Error(`transport failure for ${channel}/${endpoint}: HTTP ${response.status}`)
-    }
-    const full = serverResponseSchema.parse(await response.json())
-    if (full.rpcId !== rpcId) {
-      throw new Error(`rpcId mismatch for ${endpoint}: sent ${rpcId}, got ${full.rpcId}`)
-    }
-    return full.result
+    return this.connection.call(channel, endpoint, payload, requestSignal)
   }
 
   private fail(generation: Generation, error: Error): void {

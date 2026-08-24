@@ -28,6 +28,7 @@ const contribution = {
 
 class MockSocket extends EventTarget {
   readyState = 0
+  bufferedAmount = 0
 
   constructor(readonlyUrl, readonlyProtocol) {
     super()
@@ -43,6 +44,16 @@ class MockSocket extends EventTarget {
     if (this.readyState === 3) return
     this.readyState = 3
     this.dispatchEvent(new Event('close'))
+  }
+
+  send(data) {
+    const request = JSON.parse(data)
+    if (request.method !== 'connection.rpc') return
+    queueMicrotask(() => this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({
+      type: 'server-response',
+      rpcId: request.rpcId,
+      result: { ok: true, value: `browser:${request.payload.payload.args.value}` },
+    }) })))
   }
 }
 
@@ -61,14 +72,6 @@ test('standalone browser peer owns one generation and both native event sockets'
       const url = new URL(input)
       requests.push({ path: url.pathname, init })
       if (url.pathname === '/api/connection.open') return Response.json({ id: 'peer-browser-1' })
-      if (url.pathname === '/api/echo/echo') {
-        const request = JSON.parse(init.body)
-        return Response.json({
-          type: 'server-response',
-          rpcId: request.rpcId,
-          result: { ok: true, value: `browser:${request.payload.args.value}` },
-        })
-      }
       return new Response('not found', { status: 404 })
     },
   })
@@ -84,7 +87,7 @@ test('standalone browser peer owns one generation and both native event sockets'
   ])
   assert.ok(sockets.every(socket => socket.protocol === 'peer-browser-1'))
   assert.deepEqual(await client.remote.echo.echo('hello'), { ok: true, value: 'browser:hello' })
-  assert.deepEqual(requests.map(request => request.path), ['/api/connection.open', '/api/echo/echo'])
+  assert.deepEqual(requests.map(request => request.path), ['/api/connection.open'])
 
   const events = []
   const stopEvent = client.onEvent(event => events.push(event))

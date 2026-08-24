@@ -6,21 +6,23 @@ import WebSocket, { WebSocketServer } from 'ws'
 import { HostConnectionBinding } from '../lib/host/connection.js'
 import { createClientConnectionBinding } from '../lib/shared/client-connection.js'
 
-test('Host and Client complete reverse calls including void results over real carriers', async t => {
+test('Host and Client complete both RPC directions over one real host WebSocket', async t => {
   const host = new HostConnectionBinding()
+  host.setDispatcher(async request => ({
+    ok: true,
+    value: request.payload.endpoint === 'echo/void'
+      ? undefined
+      : request.payload.payload.value + 10,
+  }))
   let origin
   let client
   let generation
   let mux
   let downlink
   const server = createServer(async (request, response) => {
-    const chunks = []
-    for await (const chunk of request) chunks.push(chunk)
-    const body = Buffer.concat(chunks)
     const result = await host.fetch(new Request(new URL(request.url, origin), {
       method: request.method,
       headers: request.headers,
-      ...(body.length === 0 ? {} : { body }),
     })) ?? new Response('not found', { status: 404 })
     response.writeHead(result.status, Object.fromEntries(result.headers.entries()))
     response.end(Buffer.from(await result.arrayBuffer()))
@@ -39,9 +41,7 @@ test('Host and Client complete reverse calls including void results over real ca
     const path = new URL(request.url, origin).pathname
     const kind = path === '/api/events.mux' ? 'mux' : path === '/api/events.host' ? 'host' : undefined
     if (kind === undefined) return socket.destroy()
-    sockets.handleUpgrade(request, socket, head, websocket => {
-      host.attach(kind, request, websocket)
-    })
+    sockets.handleUpgrade(request, socket, head, websocket => host.attach(kind, request, websocket))
   })
   server.listen(0, '127.0.0.1')
   await once(server, 'listening')
@@ -57,6 +57,7 @@ test('Host and Client complete reverse calls including void results over real ca
   generation = await client.open()
   mux = new WebSocket(`${origin.replace('http:', 'ws:')}/api/events.mux`, generation.id)
   downlink = new WebSocket(`${origin.replace('http:', 'ws:')}/api/events.host`, generation.id)
+  client.attach(generation, 'host', downlink)
   downlink.on('message', data => client.handle(JSON.parse(data.toString()), generation))
   await Promise.all([once(mux, 'open'), once(downlink, 'open')])
   const peer = host.peers.list()[0] ?? await new Promise(resolve => {
@@ -67,12 +68,12 @@ test('Host and Client complete reverse calls including void results over real ca
     })
   })
 
-  assert.deepEqual(await peer.call('/api', 'echo/run', { value: 1 }), {
-    ok: true,
-    value: 2,
-  })
-  assert.deepEqual(await peer.call('/api', 'echo/void', {}), {
-    ok: true,
-    value: undefined,
-  })
+  const [hostToClient, clientToHost] = await Promise.all([
+    peer.call('/api', 'echo/run', { value: 1 }),
+    client.call('/api', 'echo/run', { value: 2 }),
+  ])
+  assert.deepEqual(hostToClient, { ok: true, value: 2 })
+  assert.deepEqual(clientToHost, { ok: true, value: 12 })
+  assert.deepEqual(await peer.call('/api', 'echo/void', {}), { ok: true, value: undefined })
+  assert.deepEqual(await client.call('/api', 'echo/void', {}), { ok: true, value: undefined })
 })

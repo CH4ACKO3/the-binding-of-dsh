@@ -31,13 +31,24 @@ const descriptors = ['echo', 'wait'].map(method => ({
 
 test('Node peer completes calls in both directions over the existing Connection carrier', async t => {
   const host = new HostConnectionBinding()
+  const httpPaths = []
   const sockets = new WebSocketServer({ noServer: true })
   let origin
   let releaseWait
   const wait = new Promise(resolve => {
     releaseWait = resolve
   })
+  host.setDispatcher(async (request, _headers, signal) => {
+    if (request.payload.endpoint === 'echo/wait') {
+      await Promise.race([
+        wait,
+        new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })),
+      ])
+    }
+    return { ok: true, value: `node:${request.payload.payload.args.value}` }
+  })
   const server = createServer(async (request, response) => {
+    httpPaths.push(new URL(request.url, origin).pathname)
     const chunks = []
     for await (const chunk of request) chunks.push(chunk)
     const body = Buffer.concat(chunks)
@@ -47,16 +58,6 @@ test('Node peer completes calls in both directions over the existing Connection 
       ...(body.length === 0 ? {} : { body }),
     })
     let result = await host.fetch(webRequest)
-    const path = new URL(request.url, origin).pathname
-    if (result === undefined && (path === '/api/echo/echo' || path === '/api/echo/wait')) {
-      const message = JSON.parse(body.toString())
-      if (path.endsWith('/wait')) await wait
-      result = Response.json({
-        type: 'server-response',
-        rpcId: message.rpcId,
-        result: { ok: true, value: `node:${message.payload.args.value}` },
-      })
-    }
     result ??= new Response('not found', { status: 404 })
     response.writeHead(result.status, Object.fromEntries(result.headers.entries()))
     response.end(Buffer.from(await result.arrayBuffer()))
@@ -105,6 +106,7 @@ test('Node peer completes calls in both directions over the existing Connection 
     ok: true,
     value: 'node:hello',
   })
+  assert.deepEqual(httpPaths, ['/api/connection.open'])
 
   const pending = client.remote.echo.wait('loss')
   const mux = [...sockets.clients].find(socket => socket.kind === 'mux')

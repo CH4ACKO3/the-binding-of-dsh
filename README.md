@@ -12,11 +12,12 @@ native DSH Connection and Typert Gateway.
 - Targeted Host-to-Client calls for connected browser or Node peers.
 - Symmetric Typert Gateway calls in both directions.
 - Request correlation, cancellation, and connection lifecycle handling.
-- Harmony patches that reuse DSH's existing HTTP and WebSocket transport.
+- Typert RPC requests, results, and cancellation share the native `events.host` WebSocket.
+- Native mux events and bulk HTTP APIs keep their original transport.
 
-The plugin adds no parallel RPC protocol. Connection remains responsible for
-transport and peer addressing, while Typert Gateway remains responsible for
-service descriptors, codecs, invocation, and errors.
+The plugin adds no parallel carrier. Connection remains responsible for peer
+addressing and lifecycle, while Typert Gateway remains responsible for service
+descriptors, codecs, invocation, and errors.
 
 ## Installation
 

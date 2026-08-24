@@ -2,12 +2,13 @@ import type {} from '@deepseek-ai/dsh-client-connection/client'
 import {
   CONNECTION_CANCEL_METHOD,
   CONNECTION_OPEN_PATH,
-  CONNECTION_PEER_HEADER,
-  CONNECTION_RESPOND_PATH,
-  CONNECTION_RPC_HEADER,
   CONNECTION_RPC_METHOD,
+  MAX_PENDING_CALLS,
+  MAX_SEND_QUEUE_BYTES,
   internalFailure,
-  isReverseRpcPayload,
+  isTbodServerFrame,
+  parseServerControlFrame,
+  type ClientControlFrame,
   type ClientResponse,
   type RpcResult,
   type ServerRequest,
@@ -23,15 +24,34 @@ export interface ClientConnectionGeneration {
   readonly id: string
 }
 
+interface ClientSocket {
+  readonly readyState: number
+  readonly bufferedAmount?: number
+  addEventListener(event: 'open', listener: () => void, options?: { once?: boolean }): void
+  send(data: string): void
+  close(code?: number, reason?: string): void
+}
+
 export interface ClientConnectionBinding {
   readonly intercept: (
     channel: string,
     matches: (endpoint: string) => boolean,
     handler: ClientConnectionHandler,
   ) => () => void
+  readonly call: (
+    channel: string,
+    endpoint: string,
+    payload: unknown,
+    signal?: AbortSignal,
+  ) => Promise<RpcResult<unknown>>
   open(signal?: AbortSignal): Promise<ClientConnectionGeneration>
+  attach(
+    generation: ClientConnectionGeneration | undefined,
+    kind: 'mux' | 'host',
+    socket: ClientSocket,
+  ): void
   release(generation: ClientConnectionGeneration | undefined): void
-  handle(message: ServerRequest, generation: ClientConnectionGeneration | undefined): boolean
+  handle(message: unknown, generation: ClientConnectionGeneration | undefined): boolean
 }
 
 interface Registration {
@@ -41,10 +61,33 @@ interface Registration {
   active: Set<AbortController>
 }
 
+interface PendingCall {
+  resolve(result: RpcResult<unknown>): void
+  reject(error: unknown): void
+  dispose(): void
+}
+
 interface ActiveGeneration extends ClientConnectionGeneration {
   closed: boolean
-  invocations: Map<string, AbortController>
+  host?: ClientSocket
+  readyWaiters: Set<ReadyWaiter>
+  outgoing: Map<string, PendingCall>
+  incoming: Map<string, AbortController>
 }
+
+interface ReadyWaiter {
+  resolve(): void
+  reject(error: unknown): void
+  dispose(): void
+}
+
+interface GenerationWaiter {
+  resolve(generation: ActiveGeneration): void
+  reject(error: unknown): void
+  dispose(): void
+}
+
+type RpcServerRequest = Extract<ServerRequest, { method: typeof CONNECTION_RPC_METHOD }>
 
 export interface ClientConnectionBindingOptions {
   fetch?: typeof globalThis.fetch
@@ -66,44 +109,118 @@ export function createClientConnectionBinding(
       : INTERNAL_BASE
   })
   const registrations = new Set<Registration>()
+  const generationWaiters = new Set<GenerationWaiter>()
   let current: ActiveGeneration | undefined
   let opening: Promise<ActiveGeneration> | undefined
 
-  const close = (generation: ActiveGeneration): void => {
+  const close = (generation: ActiveGeneration, reason: unknown): void => {
     if (generation.closed) return
     generation.closed = true
     if (current === generation) current = undefined
-    for (const controller of generation.invocations.values()) {
-      controller.abort(new Error('Connection generation closed'))
+    for (const pending of generation.outgoing.values()) {
+      pending.dispose()
+      pending.reject(reason)
     }
-    generation.invocations.clear()
+    generation.outgoing.clear()
+    for (const waiter of generation.readyWaiters) {
+      waiter.dispose()
+      waiter.reject(reason)
+    }
+    generation.readyWaiters.clear()
+    for (const controller of generation.incoming.values()) controller.abort(reason)
+    generation.incoming.clear()
+    if (generation.host !== undefined
+      && (generation.host.readyState === 0 || generation.host.readyState === 1)) {
+      generation.host.close(1008, 'connection generation closed')
+    }
   }
 
-  const respond = async (generation: ActiveGeneration, message: ClientResponse): Promise<void> => {
-    if (generation.closed) return
-    const response = await fetch(new URL(CONNECTION_RESPOND_PATH, baseUrl()), {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        [CONNECTION_PEER_HEADER]: generation.id,
-        [CONNECTION_RPC_HEADER]: message.rpcId,
-      },
-      body: JSON.stringify(message),
+  const send = (generation: ActiveGeneration, frame: ClientControlFrame): void => {
+    const socket = generation.host
+    if (generation.closed || socket?.readyState !== 1) throw new Error('Connection host WebSocket is not open')
+    const data = JSON.stringify(frame)
+    const size = byteLength(data)
+    if ((socket.bufferedAmount ?? 0) + size > MAX_SEND_QUEUE_BYTES) {
+      throw new Error('Connection WebSocket send queue exceeds limit')
+    }
+    socket.send(data)
+  }
+
+  const ready = (generation: ActiveGeneration, signal?: AbortSignal): Promise<void> => {
+    if (generation.host?.readyState === 1) return Promise.resolve()
+    if (generation.closed) return Promise.reject(new Error('Connection generation closed'))
+    if (signal?.aborted === true) return Promise.reject(signal.reason)
+    return new Promise((resolve, reject) => {
+      const aborted = (): void => {
+        generation.readyWaiters.delete(waiter)
+        waiter.dispose()
+        reject(signal?.reason)
+      }
+      const waiter: ReadyWaiter = {
+        resolve,
+        reject,
+        dispose: () => signal?.removeEventListener('abort', aborted),
+      }
+      generation.readyWaiters.add(waiter)
+      signal?.addEventListener('abort', aborted, { once: true })
     })
-    if (!response.ok) throw new Error(`Connection response failed with HTTP ${response.status}`)
+  }
+
+  const activeGeneration = (signal?: AbortSignal): Promise<ActiveGeneration> => {
+    if (current !== undefined && !current.closed) return Promise.resolve(current)
+    if (signal?.aborted === true) return Promise.reject(signal.reason)
+    return new Promise((resolve, reject) => {
+      const aborted = (): void => {
+        generationWaiters.delete(waiter)
+        waiter.dispose()
+        reject(signal?.reason)
+      }
+      const waiter: GenerationWaiter = {
+        resolve,
+        reject,
+        dispose: () => signal?.removeEventListener('abort', aborted),
+      }
+      generationWaiters.add(waiter)
+      signal?.addEventListener('abort', aborted, { once: true })
+    })
+  }
+
+  const publishGeneration = (generation: ActiveGeneration): void => {
+    current = generation
+    for (const waiter of generationWaiters) {
+      waiter.dispose()
+      waiter.resolve(generation)
+    }
+    generationWaiters.clear()
+  }
+
+  const rejectGenerationWaiters = (error: unknown): void => {
+    for (const waiter of generationWaiters) {
+      waiter.dispose()
+      waiter.reject(error)
+    }
+    generationWaiters.clear()
+  }
+
+  const activate = (generation: ActiveGeneration): void => {
+    if (generation.closed || generation.host?.readyState !== 1) return
+    for (const waiter of generation.readyWaiters) {
+      waiter.dispose()
+      waiter.resolve()
+    }
+    generation.readyWaiters.clear()
   }
 
   const dispatch = async (
     generation: ActiveGeneration,
-    message: ServerRequest,
+    message: RpcServerRequest,
   ): Promise<void> => {
-    if (!isReverseRpcPayload(message.payload)) return
     const request = message.payload
     const registration = [...registrations].find(candidate => (
       candidate.channel === request.channel && candidate.matches(request.endpoint)
     ))
     const controller = new AbortController()
-    generation.invocations.set(message.rpcId, controller)
+    generation.incoming.set(message.rpcId, controller)
     registration?.active.add(controller)
     let result: RpcResult<unknown>
     try {
@@ -115,20 +232,21 @@ export function createClientConnectionBinding(
     } finally {
       registration?.active.delete(controller)
     }
-    if (generation.invocations.get(message.rpcId) !== controller) return
-    generation.invocations.delete(message.rpcId)
+    if (generation.incoming.get(message.rpcId) !== controller) return
+    generation.incoming.delete(message.rpcId)
     try {
-      await respond(generation, {
+      const response: ClientResponse = {
         type: 'client-response',
         rpcId: message.rpcId,
         result,
-      })
-    } catch {
-      close(generation)
+      }
+      send(generation, response)
+    } catch (error) {
+      close(generation, error)
     }
   }
 
-  return {
+  const binding: ClientConnectionBinding = {
     intercept(channel, matches, handler) {
       const registration = { channel, matches, handler, active: new Set<AbortController>() }
       registrations.add(registration)
@@ -139,6 +257,57 @@ export function createClientConnectionBinding(
         }
         registration.active.clear()
       }
+    },
+    async call(channel, endpoint, payload, signal) {
+      const generation = await activeGeneration(signal)
+      await ready(generation, signal)
+      if (signal?.aborted === true) throw signal.reason
+      if (current !== generation || generation.closed || generation.host?.readyState !== 1) {
+        throw new Error('Connection peer is not active')
+      }
+      if (generation.outgoing.size + generation.incoming.size >= MAX_PENDING_CALLS) {
+        throw new Error('Connection generation RPC limit reached')
+      }
+      const rpcId = globalThis.crypto.randomUUID()
+      return new Promise((resolve, reject) => {
+        const aborted = (): void => {
+          const pending = generation.outgoing.get(rpcId)
+          if (pending === undefined) return
+          generation.outgoing.delete(rpcId)
+          pending.dispose()
+          reject(signal?.reason)
+          try {
+            send(generation, {
+              type: 'client-request',
+              rpcId,
+              method: CONNECTION_CANCEL_METHOD,
+              payload: null,
+            })
+          } catch (error) {
+            close(generation, error)
+          }
+        }
+        const pending: PendingCall = {
+          resolve,
+          reject,
+          dispose: () => signal?.removeEventListener('abort', aborted),
+        }
+        generation.outgoing.set(rpcId, pending)
+        signal?.addEventListener('abort', aborted, { once: true })
+        try {
+          send(generation, {
+            type: 'client-request',
+            rpcId,
+            method: CONNECTION_RPC_METHOD,
+            payload: { channel, endpoint, payload },
+          })
+        } catch (error) {
+          generation.outgoing.delete(rpcId)
+          pending.dispose()
+          reject(error)
+          close(generation, error)
+        }
+      })
     },
     async open(signal) {
       if (current !== undefined && !current.closed) return current
@@ -157,31 +326,72 @@ export function createClientConnectionBinding(
         const generation: ActiveGeneration = {
           id: body.id,
           closed: false,
-          invocations: new Map(),
+          readyWaiters: new Set(),
+          outgoing: new Map(),
+          incoming: new Map(),
         }
-        current = generation
+        publishGeneration(generation)
         return generation
-      })().finally(() => {
+      })().catch(error => {
+        rejectGenerationWaiters(error)
+        throw error
+      }).finally(() => {
         opening = undefined
       })
       return opening
     },
+    attach(generation, kind, socket) {
+      const active = current
+      if (kind !== 'host' || generation === undefined || active !== generation || active.closed) return
+      if (active.host !== undefined && active.host !== socket) {
+        close(active, new Error('Connection generation has duplicate host WebSockets'))
+        return
+      }
+      active.host = socket
+      socket.addEventListener('open', () => activate(active), { once: true })
+      activate(active)
+    },
     release(generation) {
-      if (generation !== undefined && current === generation) close(current)
+      if (generation !== undefined && current === generation) {
+        close(current, new Error('Connection generation closed'))
+      }
     },
     handle(message, generation) {
       const active = current
       if (generation === undefined || active === undefined || active !== generation || active.closed) return false
-      if (message.method === CONNECTION_CANCEL_METHOD) {
-        active.invocations.get(message.rpcId)?.abort(new Error('Remote call cancelled'))
-        active.invocations.delete(message.rpcId)
+      const frame = parseServerControlFrame(message)
+      if (frame === undefined) {
+        if (!isTbodServerFrame(message)) return false
+        close(active, new Error('Malformed Connection control frame'))
         return true
       }
-      if (message.method !== CONNECTION_RPC_METHOD) return false
-      void dispatch(active, message)
+      if (frame.type === 'server-response') {
+        const pending = active.outgoing.get(frame.rpcId)
+        if (pending === undefined) return true
+        active.outgoing.delete(frame.rpcId)
+        pending.dispose()
+        pending.resolve(frame.result)
+        return true
+      }
+      if (frame.method === CONNECTION_CANCEL_METHOD) {
+        active.incoming.get(frame.rpcId)?.abort(new Error('Remote call cancelled'))
+        active.incoming.delete(frame.rpcId)
+        return true
+      }
+      if (active.outgoing.size + active.incoming.size >= MAX_PENDING_CALLS
+        || active.incoming.has(frame.rpcId)) {
+        close(active, new Error('Connection generation RPC limit reached'))
+        return true
+      }
+      void dispatch(active, frame)
       return true
     },
   }
+  return binding
+}
+
+function byteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength
 }
 
 declare module '@deepseek-ai/dsh-client-connection/client' {

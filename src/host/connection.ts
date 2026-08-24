@@ -3,13 +3,15 @@ import type {} from '@deepseek-ai/dsh-client-connection'
 import {
   CONNECTION_CANCEL_METHOD,
   CONNECTION_OPEN_PATH,
-  CONNECTION_PEER_HEADER,
-  CONNECTION_RESPOND_PATH,
-  CONNECTION_RPC_HEADER,
   CONNECTION_RPC_METHOD,
-  type ClientResponse,
+  MAX_PENDING_CALLS,
+  MAX_SEND_QUEUE_BYTES,
+  internalFailure,
+  parseClientControlFrame,
+  parseServerControlFrame,
+  type ClientRequest,
   type RpcResult,
-  type ServerRequest,
+  type ServerControlFrame,
 } from '../shared/protocol.js'
 
 export interface ConnectionPeer {
@@ -38,6 +40,7 @@ interface SocketLike {
   send(data: string, callback: (error?: Error | null) => void): void
   close(code?: number, reason?: string): void
   once(event: 'close' | 'error', listener: () => void): void
+  on(event: 'message', listener: (data: unknown) => void): void
 }
 
 interface PendingCall {
@@ -52,46 +55,87 @@ interface Generation {
   failed: boolean
   mux?: SocketLike
   host?: SocketLike
+  headers?: Record<string, unknown>
   peer?: ConnectionPeer
-  pending: Map<string, PendingCall>
+  outgoing: Map<string, PendingCall>
+  incoming: Map<string, AbortController>
 }
 
-const sendQueues = new WeakMap<object, Promise<void>>()
+export type HostConnectionDispatcher = (
+  request: ClientRequest & { method: typeof CONNECTION_RPC_METHOD },
+  headers: Record<string, unknown>,
+  signal: AbortSignal,
+) => Promise<RpcResult<unknown>>
 
-function clientResponse(value: unknown): ClientResponse | undefined {
-  if (typeof value !== 'object' || value === null) return undefined
-  const message = value as Partial<ClientResponse>
-  if (message.type !== 'client-response' || typeof message.rpcId !== 'string'
-    || typeof message.result !== 'object' || message.result === null
-    || typeof message.result.ok !== 'boolean') return undefined
-  if (message.result.ok) {
-    return {
-      type: message.type,
-      rpcId: message.rpcId,
-      result: { ok: true, value: message.result.value },
-    }
+interface FetchHandler {
+  fetch(request: Request): Response | Promise<Response>
+}
+
+interface SendQueue {
+  tail: Promise<void>
+  bytes: number
+}
+
+const sendQueues = new WeakMap<object, SendQueue>()
+
+export function sendConnectionMessage(socket: SocketLike, message: unknown): Promise<void> {
+  const data = JSON.stringify(message)
+  if (data === undefined) return Promise.reject(new Error('Connection message is not serializable'))
+  const bytes = Buffer.byteLength(data)
+  const queue = sendQueues.get(socket) ?? { tail: Promise.resolve(), bytes: 0 }
+  if (queue.bytes + bytes > MAX_SEND_QUEUE_BYTES) {
+    return Promise.reject(new Error('Connection WebSocket send queue exceeds limit'))
   }
-  const error = message.result.error
-  return typeof error === 'object' && error !== null
-    && typeof error.code === 'string' && typeof error.message === 'string'
-    && Object.hasOwn(error, 'details')
-    ? message as ClientResponse
-    : undefined
+  queue.bytes += bytes
+  const next = queue.tail.catch(() => undefined).then(() => new Promise<void>((resolve, reject) => {
+    if (socket.readyState !== 1) return reject(new Error('WebSocket connection is closed'))
+    socket.send(data, error => error == null ? resolve() : reject(error))
+  })).finally(() => {
+    queue.bytes -= bytes
+  })
+  queue.tail = next
+  sendQueues.set(socket, queue)
+  return next
 }
 
-export function sendConnectionMessage(socket: SocketLike, message: ServerRequest): Promise<void> {
-  const previous = sendQueues.get(socket) ?? Promise.resolve()
-  const next = previous.then(() => new Promise<void>((resolve, reject) => {
-    if (socket.readyState !== 1) return reject(new Error('WebSocket downlink is closed'))
-    socket.send(JSON.stringify(message), error => error == null ? resolve() : reject(error))
-  }))
-  sendQueues.set(socket, next)
-  return next
+export function createHostFetchDispatcher(fetchHandler: FetchHandler): HostConnectionDispatcher {
+  return async (message, headers, signal) => {
+    const requestHeaders = new Headers()
+    for (const [name, value] of Object.entries(headers)) {
+      if (typeof value === 'string') requestHeaders.set(name, value)
+      else if (Array.isArray(value)) requestHeaders.set(name, value.join(', '))
+    }
+    requestHeaders.set('content-type', 'application/json')
+    const channel = message.payload.channel.endsWith('/')
+      ? message.payload.channel.slice(0, -1)
+      : message.payload.channel
+    const endpoint = message.payload.endpoint.startsWith('/')
+      ? message.payload.endpoint.slice(1)
+      : message.payload.endpoint
+    const response = await fetchHandler.fetch(new Request(`http://dsh.internal${channel}/${endpoint}`, {
+      method: 'POST',
+      headers: requestHeaders,
+      body: JSON.stringify({
+        type: 'client-request',
+        rpcId: message.rpcId,
+        method: endpoint,
+        payload: message.payload.payload,
+      }),
+      signal,
+    }))
+    if (!response.ok) throw new Error(`Connection dispatcher failed with HTTP ${response.status}`)
+    const frame = parseServerControlFrame(await response.json())
+    if (frame?.type !== 'server-response' || frame.rpcId !== message.rpcId) {
+      throw new Error('Connection dispatcher returned a malformed response')
+    }
+    return frame.result
+  }
 }
 
 export interface ReverseConnectionHost {
   readonly peers: HostConnectionPeers
   fetch(request: Request): Promise<Response> | undefined
+  setDispatcher(dispatcher: HostConnectionDispatcher): void
   attach(kind: 'mux' | 'host', request: { headers: Record<string, unknown> }, socket: SocketLike): boolean
   dispose(): void
 }
@@ -100,6 +144,7 @@ export class HostConnectionBinding implements ReverseConnectionHost {
   private readonly generations = new Map<string, Generation>()
   private readonly published = new Map<string, ConnectionPeer>()
   private readonly listeners = new Set<(change: PeerChange) => void>()
+  private dispatcher: HostConnectionDispatcher | undefined
 
   readonly peers: HostConnectionPeers = {
     get: id => this.published.get(id),
@@ -110,16 +155,12 @@ export class HostConnectionBinding implements ReverseConnectionHost {
     },
   }
 
+  setDispatcher(dispatcher: HostConnectionDispatcher): void {
+    this.dispatcher = dispatcher
+  }
+
   fetch(request: Request): Promise<Response> | undefined {
-    const path = new URL(request.url).pathname
-    if (path === CONNECTION_OPEN_PATH) return this.open(request)
-    if (path !== CONNECTION_RESPOND_PATH) return undefined
-    const id = request.headers.get(CONNECTION_PEER_HEADER)
-    const generation = id === null ? undefined : this.generations.get(id)
-    if (generation === undefined || generation.failed) return undefined
-    const rpcId = request.headers.get(CONNECTION_RPC_HEADER)
-    if (rpcId === null || !generation.pending.has(rpcId)) return undefined
-    return this.respond(generation, request)
+    return new URL(request.url).pathname === CONNECTION_OPEN_PATH ? this.open(request) : undefined
   }
 
   attach(
@@ -135,6 +176,10 @@ export class HostConnectionBinding implements ReverseConnectionHost {
       return false
     }
     generation[kind] = socket
+    if (kind === 'host') {
+      generation.headers = request.headers
+      socket.on('message', data => this.receive(generation, data))
+    }
     const failed = (): void => this.fail(generation, new Error('Connection generation closed'))
     socket.once('close', failed)
     socket.once('error', failed)
@@ -159,30 +204,70 @@ export class HostConnectionBinding implements ReverseConnectionHost {
         ? 'node'
         : 'browser',
       failed: false,
-      pending: new Map(),
+      outgoing: new Map(),
+      incoming: new Map(),
     })
     return Response.json({ id })
   }
 
-  private async respond(generation: Generation, request: Request): Promise<Response> {
-    if (request.method !== 'POST') return new Response('method not allowed', { status: 405 })
-    let body: unknown
+  private receive(generation: Generation, data: unknown): void {
+    if (generation.failed) return
+    let value: unknown
     try {
-      body = await request.json()
-    } catch {
-      return Response.json({ accepted: false, reason: 'bad-response' })
+      const text = socketText(data)
+      value = JSON.parse(text)
+    } catch (error) {
+      this.fail(generation, error)
+      return
     }
-    const message = clientResponse(body)
-    if (message === undefined) return Response.json({ accepted: false, reason: 'bad-response' })
-    if (message.rpcId !== request.headers.get(CONNECTION_RPC_HEADER)) {
-      return Response.json({ accepted: false, reason: 'bad-response' })
+    const frame = parseClientControlFrame(value)
+    if (frame === undefined) {
+      this.fail(generation, new Error('Malformed Connection control frame'))
+      return
     }
-    const pending = generation.pending.get(message.rpcId)
-    if (pending === undefined) return Response.json({ accepted: false, reason: 'not-pending' })
-    generation.pending.delete(message.rpcId)
-    pending.dispose()
-    pending.resolve(message.result)
-    return Response.json({ accepted: true })
+    if (frame.type === 'client-response') {
+      const pending = generation.outgoing.get(frame.rpcId)
+      if (pending === undefined) return
+      generation.outgoing.delete(frame.rpcId)
+      pending.dispose()
+      pending.resolve(frame.result)
+      return
+    }
+    if (frame.method === CONNECTION_CANCEL_METHOD) {
+      generation.incoming.get(frame.rpcId)?.abort(new Error('Remote call cancelled'))
+      generation.incoming.delete(frame.rpcId)
+      return
+    }
+    if (generation.outgoing.size + generation.incoming.size >= MAX_PENDING_CALLS
+      || generation.incoming.has(frame.rpcId)) {
+      this.fail(generation, new Error('Connection generation RPC limit reached'))
+      return
+    }
+    void this.dispatch(generation, frame)
+  }
+
+  private async dispatch(
+    generation: Generation,
+    request: ClientRequest & { method: typeof CONNECTION_RPC_METHOD },
+  ): Promise<void> {
+    const controller = new AbortController()
+    generation.incoming.set(request.rpcId, controller)
+    let result: RpcResult<unknown>
+    try {
+      result = this.dispatcher === undefined
+        ? internalFailure('Host Connection dispatcher is not installed')
+        : await this.dispatcher(request, generation.headers ?? {}, controller.signal)
+    } catch (error) {
+      result = internalFailure(error)
+    }
+    if (generation.incoming.get(request.rpcId) !== controller) return
+    generation.incoming.delete(request.rpcId)
+    if (generation.host === undefined || generation.failed) return
+    void sendConnectionMessage(generation.host, {
+      type: 'server-response',
+      rpcId: request.rpcId,
+      result,
+    } satisfies ServerControlFrame).catch(error => this.fail(generation, error))
   }
 
   private publish(generation: Generation): void {
@@ -208,12 +293,15 @@ export class HostConnectionBinding implements ReverseConnectionHost {
       return Promise.reject(new Error('Connection peer is not active'))
     }
     if (signal?.aborted === true) return Promise.reject(signal.reason)
+    if (generation.outgoing.size + generation.incoming.size >= MAX_PENDING_CALLS) {
+      return Promise.reject(new Error('Connection generation RPC limit reached'))
+    }
     const rpcId = randomUUID()
     return new Promise((resolve, reject) => {
       const aborted = (): void => {
-        const pending = generation.pending.get(rpcId)
+        const pending = generation.outgoing.get(rpcId)
         if (pending === undefined) return
-        generation.pending.delete(rpcId)
+        generation.outgoing.delete(rpcId)
         pending.dispose()
         reject(signal?.reason)
         void sendConnectionMessage(generation.host!, {
@@ -221,21 +309,21 @@ export class HostConnectionBinding implements ReverseConnectionHost {
           rpcId,
           method: CONNECTION_CANCEL_METHOD,
           payload: null,
-        }).catch(() => undefined)
+        } satisfies ServerControlFrame).catch(error => this.fail(generation, error))
       }
       const pending: PendingCall = {
         resolve,
         reject,
         dispose: () => signal?.removeEventListener('abort', aborted),
       }
-      generation.pending.set(rpcId, pending)
+      generation.outgoing.set(rpcId, pending)
       signal?.addEventListener('abort', aborted, { once: true })
       void sendConnectionMessage(generation.host!, {
         type: 'server-request',
         rpcId,
         method: CONNECTION_RPC_METHOD,
         payload: { channel, endpoint, payload },
-      }).catch(error => this.fail(generation, error))
+      } satisfies ServerControlFrame).catch(error => this.fail(generation, error))
     })
   }
 
@@ -247,19 +335,33 @@ export class HostConnectionBinding implements ReverseConnectionHost {
       this.published.delete(generation.id)
       this.emit({ type: 'removed', peer: generation.peer })
     }
-    for (const pending of generation.pending.values()) {
+    for (const pending of generation.outgoing.values()) {
       pending.dispose()
       pending.reject(error)
     }
-    generation.pending.clear()
+    generation.outgoing.clear()
+    for (const controller of generation.incoming.values()) controller.abort(error)
+    generation.incoming.clear()
     for (const socket of [generation.mux, generation.host]) {
-      if (socket !== undefined && (socket.readyState === 0 || socket.readyState === 1)) socket.close()
+      if (socket !== undefined && (socket.readyState === 0 || socket.readyState === 1)) {
+        socket.close(1008, 'connection generation closed')
+      }
     }
   }
 
   private emit(change: PeerChange): void {
     for (const listener of [...this.listeners]) listener(change)
   }
+}
+
+function socketText(data: unknown): string {
+  if (typeof data === 'string') return data
+  if (data instanceof ArrayBuffer) return Buffer.from(data).toString()
+  if (ArrayBuffer.isView(data)) return Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString()
+  if (Array.isArray(data) && data.every(value => ArrayBuffer.isView(value))) {
+    return Buffer.concat(data.map(value => Buffer.from(value.buffer, value.byteOffset, value.byteLength))).toString()
+  }
+  throw new TypeError('Unsupported WebSocket frame')
 }
 
 declare module '@deepseek-ai/dsh-client-connection' {

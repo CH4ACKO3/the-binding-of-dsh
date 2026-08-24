@@ -23,7 +23,7 @@ test('describes every Harmony patch', () => {
 test('ships one atomic Harmony patch for the complete integration', () => {
   assert.equal(declaration.length, 1)
   assert.equal(declaration[0].id, 'bidirectional-connection')
-  assert.equal(declaration[0].patches.length, 17)
+  assert.equal(declaration[0].patches.length, 18)
 })
 
 function targetPath(member) {
@@ -47,10 +47,10 @@ async function applyPatch(declaration) {
 }
 
 test('Connection Harmony patch binds and produces parseable sources', async () => {
-  assert.equal(members.length, 17)
+  assert.equal(members.length, 18)
   assert.equal(
     members.filter(patch => patch.target.package === '@deepseek-ai/dsh-client-connection').length,
-    15,
+    16,
   )
   assert.equal(
     members.filter(patch => patch.target.package === '@deepseek-ai/dsh-client-modules').length,
@@ -68,14 +68,18 @@ test('Connection Harmony patch binds and produces parseable sources', async () =
   assert.match(host, /new HostConnectionBinding\(\)/)
   assert.ok(host.indexOf('super(ctx, "connection")') < host.indexOf('new HostConnectionBinding()'))
   assert.match(host, /this\.bidirectional\.attach\(kind, req, websocket\)/)
+  assert.match(host, /if \(kind === "mux"\) websocket\.once\("message"/)
+  assert.match(host, /setDispatcher\(createHostFetchDispatcher\(fetchHandler\)\)/)
   assert.match(host, /new WebSocketDownlinks\(apiCtx\.apiProxy, connection\.bidirectional\)/)
 
   const clientPath = require.resolve('@deepseek-ai/dsh-client-connection/client')
   const client = sources.get(clientPath)
   assert.match(client, /await this\.bidirectional\?\.open\(signal\)/)
   assert.match(client, /new WebSocket\(url, generation\.id\)/)
-  assert.match(client, /this\.bidirectional\?\.handle\(full, generation\)/)
+  assert.match(client, /this\.bidirectional\?\.attach\(generation, "host", socket\)/)
+  assert.match(client, /this\.bidirectional\?\.handle\(raw, generation\)/)
   assert.match(client, /require\("the-binding-of-dsh"\)\.createClientConnectionBinding\(\)/)
+  assert.match(client, /rpc\.call = bidirectional\.call/)
 
   const modulesPath = require.resolve('@deepseek-ai/dsh-client-modules')
   const modules = sources.get(modulesPath)

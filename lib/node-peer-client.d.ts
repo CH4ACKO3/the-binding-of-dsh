@@ -3,6 +3,7 @@ import { type PeerRemoteApi } from './shared/peer-remote.js';
 import { type ClientConnectionHandler } from './shared/client-connection.js';
 interface WebSocketLike {
     readonly readyState: number;
+    readonly bufferedAmount?: number;
     addEventListener(event: 'open' | 'close' | 'error', listener: (event: Event) => void, options?: {
         once?: boolean;
     }): void;
@@ -10,6 +11,7 @@ interface WebSocketLike {
         data: unknown;
     }) => void): void;
     removeEventListener(event: 'open' | 'close' | 'error', listener: (event: Event) => void): void;
+    send(data: string): void;
     close(): void;
 }
 export interface NodePeerClientOptions {

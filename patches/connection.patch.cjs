@@ -31,7 +31,7 @@ module.exports = [{
       select: 'SourceFile',
       expect: 1,
       apply({ edit }) {
-        edit.prepend('import { HostConnectionBinding, sendConnectionMessage } from "the-binding-of-dsh/host/connection";\n')
+        edit.prepend('import { HostConnectionBinding, createHostFetchDispatcher, sendConnectionMessage } from "the-binding-of-dsh/host/connection";\n')
       },
     },
     {
@@ -75,6 +75,18 @@ module.exports = [{
           node.getEnd(),
           'function send(socket, frame) {\n\treturn sendConnectionMessage(socket, serverRequest(frame));\n}',
         )
+      },
+    },
+    {
+      id: 'host-rpc-dispatcher',
+      description: 'Route browser WebSocket RPC through the native shared fetch dispatcher.',
+      target: target('lib/index.js'),
+      select: 'FunctionDeclaration[name.name="apply"] VariableDeclaration[name.name="fetchHandler"]',
+      expect: 1,
+      apply({ node, edit, ts }) {
+        const statement = variableStatement(node, ts)
+        edit.appendRight(statement.getEnd(),
+          '\n\tconnection.bidirectional.setDispatcher(createHostFetchDispatcher(fetchHandler));')
       },
     },
     {
@@ -125,6 +137,11 @@ module.exports = [{
         if (callback === undefined || callback.body === undefined) throw new Error('upgrade callback shape changed')
         edit.appendLeft(callback.body.getStart(sourceFile) + 1,
           '\n\t\t\tif (!this.bidirectional.attach(kind, req, websocket)) return;')
+        const messageGuard = callback.body.statements.find(statement => (
+          statement.getText(sourceFile).startsWith('websocket.once("message"')
+        ))
+        if (messageGuard === undefined) throw new Error('downlink-only message guard missing')
+        edit.prependLeft(messageGuard.getStart(sourceFile), 'if (kind === "mux") ')
       },
     },
     {
@@ -172,17 +189,21 @@ module.exports = [{
         if (initializer === undefined) throw new Error('socket initializer missing')
         edit.overwrite(initializer.getStart(sourceFile), initializer.getEnd(),
           'generation === void 0 ? new WebSocket(url) : new WebSocket(url, generation.id)')
+        edit.appendRight(node.parent.getEnd(),
+          '\n\t\t\t\tif (path === HOST_EVENTS_PATH) this.bidirectional?.attach(generation, "host", socket);')
       },
     },
     {
       id: 'client-control-dispatch',
       description: 'Dispatch bidirectional control frames before native Connection messages.',
       target: target('lib/client.js'),
-      select: 'MethodDeclaration[name.name="readWebSocket"] BinaryExpression[left.name="frame"]',
+      select: 'MethodDeclaration[name.name="readWebSocket"] BinaryExpression[left.name="full"]',
       expect: 1,
       apply({ node, sourceFile, edit }) {
-        edit.prependLeft(node.parent.getStart(sourceFile),
-          'if (this.bidirectional?.handle(full, generation) === true) return;\n\t\t\t\t\t\t')
+        edit.overwrite(node.parent.getStart(sourceFile), node.parent.getEnd(),
+          `const raw = JSON.parse(event.data);
+\t\t\t\t\t\tif (this.bidirectional?.handle(raw, generation) === true) return;
+\t\t\t\t\t\tfull = serverRequestSchema.parse(raw);`)
       },
     },
     {
@@ -210,6 +231,7 @@ module.exports = [{
 \t\t\t\t: void 0;
 \t\t\tif (bidirectional !== void 0) {
 \t\t\t\tapi.bidirectional = bidirectional;
+\t\t\t\trpc.call = bidirectional.call;
 \t\t\t\trpc.intercept = bidirectional.intercept;
 \t\t\t}`)
       },

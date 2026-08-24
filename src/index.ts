@@ -16,6 +16,7 @@ export type {
 } from './node-peer-client.js'
 
 export {
+  createHostFetchDispatcher,
   HostConnectionBinding,
   sendConnectionMessage,
 } from './host/connection.js'
@@ -30,6 +31,7 @@ export {
 export { installClientGateway } from './shared/client-gateway.js'
 export type {
   ConnectionPeer,
+  HostConnectionDispatcher,
   HostConnectionPeers,
   PeerChange,
   ReverseConnectionHost,

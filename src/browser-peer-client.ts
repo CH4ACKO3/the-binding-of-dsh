@@ -6,7 +6,6 @@ import {
   type RpcRequest,
 } from '@deepseek-ai/dsh-host-apiproxy/api'
 import { hostFrameSchema, muxFrameSchema } from '@deepseek-ai/dsh-host-apiproxy/api/events.schema'
-import { serverResponseSchema } from '@deepseek-ai/dsh-host-apiproxy/api/rpc.schema'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import type { TypertDisposer, TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import { createClientConnectionBinding, type ClientConnectionGeneration } from './shared/client-connection.js'
@@ -125,6 +124,7 @@ export class BrowserPeerClient {
       active: false,
     }
     this.generation = generation
+    this.connection.attach(connection, 'host', generation.host)
     this.attach(generation, 'mux', generation.mux)
     this.attach(generation, 'host', generation.host)
     try {
@@ -146,8 +146,9 @@ export class BrowserPeerClient {
       if (this.generation !== generation || generation.abort.signal.aborted) return
       try {
         if (typeof event.data !== 'string') throw new Error('binary WebSocket frame')
-        const full = serverRequestSchema.parse(JSON.parse(event.data))
-        if (this.connection.handle(full, generation.connection)) return
+        const raw = JSON.parse(event.data)
+        if (channel === 'host' && this.connection.handle(raw, generation.connection)) return
+        const full = serverRequestSchema.parse(raw)
         const peerEvent: BrowserPeerEvent = channel === 'mux'
           ? { channel, envelope: { rpcId: full.rpcId, payload: muxFrameSchema.parse(full.payload) } }
           : { channel, envelope: { rpcId: full.rpcId, payload: hostFrameSchema.parse(full.payload) } }
@@ -194,17 +195,7 @@ export class BrowserPeerClient {
     const requestSignal = signal === undefined
       ? generation.abort.signal
       : AbortSignal.any([generation.abort.signal, signal])
-    const rpcId = crypto.randomUUID()
-    const response = await this.fetch(new URL(`${channel}/${endpoint}`, this.baseUrl), {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ type: 'client-request', rpcId, method: endpoint, payload }),
-      signal: requestSignal,
-    })
-    if (!response.ok) throw new Error(`transport failure for ${channel}/${endpoint}: HTTP ${response.status}`)
-    const full = serverResponseSchema.parse(await response.json())
-    if (full.rpcId !== rpcId) throw new Error(`rpcId mismatch for ${endpoint}: sent ${rpcId}, got ${full.rpcId}`)
-    return full.result
+    return this.connection.call(channel, endpoint, payload, requestSignal)
   }
 }
 
