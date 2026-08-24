@@ -22,7 +22,8 @@
 npm install the-binding-of-dsh
 ```
 
-包已在 `package.json` 中声明 DSH 客户端入口和 Harmony patch，因此可以作为常规 DSH 插件启用。
+包已在 `package.json` 中声明 DSH 客户端入口和 Harmony patch，因此可以作为常规 DSH 插件启用。Harmony 0.8.6
+及以上版本会自动推导 Connection patch 引入的浏览器模块依赖，并安排 Binding 模块的加载顺序。
 
 ## 开发
 

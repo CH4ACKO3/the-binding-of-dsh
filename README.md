@@ -26,7 +26,9 @@ npm install the-binding-of-dsh
 ```
 
 The package declares its DSH client entrypoint and Harmony patches in
-`package.json`, so it can be enabled as a regular DSH plugin.
+`package.json`, so it can be enabled as a regular DSH plugin. Harmony 0.8.6 or
+newer derives the browser module dependency introduced by the Connection patch
+and orders the Binding module automatically.
 
 ## Development
 

@@ -20,7 +20,7 @@ import {
 
 test('exports the Host plugin entrypoint', () => {
   assert.equal(name, 'the-binding-of-dsh')
-  assert.deepEqual(inject, ['harmony', 'typert'])
+  assert.deepEqual(inject, ['typert'])
   assert.equal(typeof apply, 'function')
   assert.equal(typeof createGatewayDispatcher, 'function')
   assert.equal(typeof installClientGateway, 'function')
@@ -103,11 +103,11 @@ test('ships built files without an install-time build script', async () => {
     '@deepseek-ai/cordis': { optional: true },
     '@deepseek-ai/dsh-api-gateway': { optional: true },
     '@deepseek-ai/dsh-client-connection': { optional: true },
-    '@deepseek-ai/dsh-client-modules': { optional: true },
     '@deepseek-ai/dsh-host-apiproxy': { optional: true },
     '@deepseek-ai/dsh-typert-protocol': { optional: true },
     '@deepseek-ai/dsh-typert-registry': { optional: true },
   })
+  assert.equal(manifest.peerDependencies['dsh-harmony'], '>=0.8.6 <0.9.0')
   assert.equal(manifest.peerDependenciesMeta['dsh-harmony'], undefined)
 })
 

@@ -4,14 +4,6 @@ const target = file => ({
   file,
 })
 
-const clientModulesTarget = file => ({
-  package: '@deepseek-ai/dsh-client-modules',
-  version: '>=0.1.0-rc.8 <0.2.0',
-  file,
-})
-
-const bindingManifestPath = require.resolve('../package.json')
-
 function variableStatement(node, ts) {
   let current = node
   while (current !== undefined && !ts.isVariableStatement(current)) current = current.parent
@@ -234,34 +226,6 @@ module.exports = [{
 \t\t\t\trpc.call = bidirectional.call;
 \t\t\t\trpc.intercept = bidirectional.intercept;
 \t\t\t}`)
-      },
-    },
-    {
-      id: 'client-module-provider-resolution',
-      description: 'Resolve the nested Binding provider when composing the client module graph.',
-      target: clientModulesTarget('lib/index.js'),
-      select: 'MethodDeclaration[name.name="resolveMeta"] CallExpression[expression.name.name="resolvePkgJson"]',
-      expect: 1,
-      apply({ node, sourceFile, edit }) {
-        edit.overwrite(node.getStart(sourceFile), node.getEnd(),
-          `pkgName === "the-binding-of-dsh" ? ${JSON.stringify(bindingManifestPath)} : ${node.getText(sourceFile)}`)
-      },
-    },
-    {
-      id: 'client-module-graph-external',
-      description: 'Order the Binding factory before the patched Connection factory.',
-      target: clientModulesTarget('lib/index.js'),
-      select: 'MethodDeclaration[name.name="resolveMeta"] VariableDeclaration[name.name="meta"] PropertyAssignment[name.name="external"]',
-      expect: 1,
-      apply({ node, sourceFile, edit }) {
-        const initializer = node.initializer
-        if (initializer === undefined) throw new Error('Client module external initializer missing')
-        edit.overwrite(initializer.getStart(sourceFile), initializer.getEnd(), `
-pkgName === "@deepseek-ai/dsh-client-connection"
-	? decl.external?.includes("the-binding-of-dsh")
-		? decl.external
-		: [...(decl.external ?? []), "the-binding-of-dsh"]
-	: decl.external ?? []`)
       },
     },
   ],

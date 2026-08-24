@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { HostRemoteService } from './host/gateway.js'
 
 export const name = 'the-binding-of-dsh'
-export const inject = ['harmony', 'typert']
+export const inject = ['typert']
 
 /** Host entrypoint exposing peer-bound Remote calls. */
 export function apply(ctx: Context): void {

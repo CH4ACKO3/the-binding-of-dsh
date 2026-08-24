@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
-import { pathToFileURL } from 'node:url'
 import { tsquery } from '@phenomnomnominal/tsquery'
 import MagicString from 'magic-string'
 import ts from 'typescript'
@@ -23,7 +20,7 @@ test('describes every Harmony patch', () => {
 test('ships one atomic Harmony patch for the complete integration', () => {
   assert.equal(declaration.length, 1)
   assert.equal(declaration[0].id, 'bidirectional-connection')
-  assert.equal(declaration[0].patches.length, 18)
+  assert.equal(declaration[0].patches.length, 16)
 })
 
 function targetPath(member) {
@@ -47,17 +44,13 @@ async function applyPatch(declaration) {
 }
 
 test('Connection Harmony patch binds and produces parseable sources', async () => {
-  assert.equal(members.length, 18)
+  assert.equal(members.length, 16)
   assert.equal(
     members.filter(patch => patch.target.package === '@deepseek-ai/dsh-client-connection').length,
     16,
   )
-  assert.equal(
-    members.filter(patch => patch.target.package === '@deepseek-ai/dsh-client-modules').length,
-    2,
-  )
   const sources = await applyPatch(members)
-  assert.equal(sources.size, 3)
+  assert.equal(sources.size, 2)
   for (const [path, source] of sources) {
     const parsed = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
     assert.deepEqual(parsed.parseDiagnostics, [], `${path} has parse diagnostics`)
@@ -80,67 +73,4 @@ test('Connection Harmony patch binds and produces parseable sources', async () =
   assert.match(client, /this\.bidirectional\?\.handle\(raw, generation\)/)
   assert.match(client, /require\("the-binding-of-dsh"\)\.createClientConnectionBinding\(\)/)
   assert.match(client, /rpc\.call = bidirectional\.call/)
-
-  const modulesPath = require.resolve('@deepseek-ai/dsh-client-modules')
-  const modules = sources.get(modulesPath)
-  const sourceFile = ts.createSourceFile(modulesPath, modules, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
-  const external = tsquery(
-    sourceFile,
-    'MethodDeclaration[name.name="resolveMeta"] VariableDeclaration[name.name="meta"] PropertyAssignment[name.name="external"]',
-  )
-  assert.equal(external.length, 1)
-  const resolveExternal = new Function(
-    'pkgName',
-    'decl',
-    `return (${external[0].initializer.getText(sourceFile)})`,
-  )
-  assert.deepEqual(resolveExternal('@deepseek-ai/dsh-client-connection', {}), ['the-binding-of-dsh'])
-  assert.deepEqual(
-    resolveExternal('@deepseek-ai/dsh-client-connection', { external: ['other'] }),
-    ['other', 'the-binding-of-dsh'],
-  )
-  assert.deepEqual(
-    resolveExternal('@deepseek-ai/dsh-client-connection', { external: ['the-binding-of-dsh'] }),
-    ['the-binding-of-dsh'],
-  )
-  assert.deepEqual(resolveExternal('other-package', {}), [])
-
-  const runtimeRoot = await mkdtemp(join(tmpdir(), 'the-binding-of-dsh-client-graph-'))
-  try {
-    await symlink(resolve('node_modules'), join(runtimeRoot, 'node_modules'), 'dir')
-    const runtimePath = join(runtimeRoot, 'client-modules.mjs')
-    await writeFile(runtimePath, modules)
-    const { ClientModuleRegistry } = await import(pathToFileURL(runtimePath).href)
-    const names = [
-      '@deepseek-ai/dsh-client-connection',
-      'the-binding-of-dsh',
-    ]
-    const registry = Object.create(ClientModuleRegistry.prototype)
-    registry.pkgMeta = new Map()
-    registry.table = new Map()
-    registry.ctx = {
-      loader: {
-        entries: () => names.map(name => ({ options: { name }, fiber: {}, disabled: false })),
-      },
-    }
-    registry.resolvePkgJson = (name) => {
-      if (name === 'the-binding-of-dsh') throw new Error('not installed at the profile root')
-      return require.resolve(`${name}/package.json`)
-    }
-    registry.initialBundleRevision = () => 'test-rev'
-
-    assert.equal(registry.processOne('@deepseek-ai/dsh-client-connection'), true)
-    assert.equal(registry.processOne('the-binding-of-dsh'), true)
-    const graph = registry.compose()
-    assert.deepEqual(graph.entries.map(entry => entry.id), [
-      'the-binding-of-dsh',
-      '@deepseek-ai/dsh-client-connection',
-    ])
-    assert.deepEqual(
-      graph.entries.find(entry => entry.id === '@deepseek-ai/dsh-client-connection').external,
-      ['the-binding-of-dsh'],
-    )
-  } finally {
-    await rm(runtimeRoot, { recursive: true, force: true })
-  }
 })
