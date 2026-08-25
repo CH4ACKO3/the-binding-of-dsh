@@ -111,6 +111,21 @@ test('ships built files without an install-time build script', async () => {
   assert.equal(manifest.peerDependenciesMeta['dsh-harmony'], undefined)
 })
 
+test('accepts supported DSH prereleases as peers', async () => {
+  const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+  const semver = createRequire(import.meta.url)('semver')
+  const peers = Object.entries(manifest.peerDependencies)
+    .filter(([name]) => name.startsWith('@deepseek-ai/dsh-'))
+
+  for (const [name, range] of peers) {
+    assert.equal(semver.satisfies('0.1.0-rc.7', range), false, name)
+    assert.equal(semver.satisfies('0.1.0-rc.8', range), true, name)
+    assert.equal(semver.satisfies('0.1.0-rc.9', range), true, name)
+    assert.equal(semver.satisfies('0.1.1-rc.2', range), true, name)
+    assert.equal(semver.satisfies('1.0.0', range), true, name)
+  }
+})
+
 test('ships CommonJS patches loadable from node_modules', async (context) => {
   const root = await mkdtemp(join(tmpdir(), 'the-binding-of-dsh-package-'))
   context.after(() => rm(root, { recursive: true, force: true }))
