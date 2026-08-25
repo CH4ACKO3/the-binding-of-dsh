@@ -31,16 +31,36 @@ test('exports the Host plugin entrypoint', () => {
 
 test('Host entrypoint installs the peer-bound Remote service', async () => {
   const root = new Context()
-  const fiber = root.plugin({
-    name: 'host-entrypoint-test',
+  const services = root.plugin({
+    name: 'host-entrypoint-test-services',
     apply(ctx) {
+      ctx.provide('harmony', {})
       new TypertRegistry(ctx)
-      apply(ctx)
     },
   })
+  await services
+  const fiber = root.plugin({ name, inject, apply })
   await fiber
-  assert.ok(fiber.ctx.remote instanceof HostRemoteService)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.ok(fiber.ctx.get('remote') instanceof HostRemoteService)
   await fiber.dispose()
+  await services.dispose()
+})
+
+test('Host entrypoint stays inactive without Harmony', async () => {
+  const root = new Context()
+  const typert = root.plugin({
+    name: 'host-entrypoint-test-typert',
+    apply(ctx) {
+      new TypertRegistry(ctx)
+    },
+  })
+  await typert
+  const fiber = root.plugin({ name, inject, apply })
+  await fiber
+  assert.equal(fiber.ctx.get('remote'), undefined)
+  await fiber.dispose()
+  await typert.dispose()
 })
 
 test('builds a DSH browser module', async () => {
@@ -89,6 +109,26 @@ test('Client entrypoint installs the Gateway and exposes its Connection binding'
   assert.equal(typeof state.registration.handler, 'function')
   assert.equal(typeof state.dispose, 'function')
   assert.equal(typeof exports.createClientConnectionBinding, 'function')
+})
+
+test('Client entrypoint stays inactive without the Harmony Connection patch', async () => {
+  const source = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
+  let definition
+  runInNewContext(source, {
+    AbortController,
+    window: {
+      __ModuleLoader__: {
+        load(value) {
+          definition = value
+        },
+      },
+    },
+  })
+  const exports = definition.factory(() => assert.fail('browser module has no external dependency'))
+  assert.doesNotThrow(() => exports.apply({
+    get: () => ({ rpc: {} }),
+    effect: () => assert.fail('inactive client must not install an effect'),
+  }))
 })
 
 test('ships built files without an install-time build script', async () => {

@@ -6,7 +6,9 @@ export const inject = ['typert']
 
 /** Host entrypoint exposing peer-bound Remote calls. */
 export function apply(ctx: Context): void {
-  new HostRemoteService(ctx)
+  ctx.inject(['harmony'], (harmonyCtx) => {
+    new HostRemoteService(harmonyCtx)
+  })
 }
 
 export { NodePeerClient } from './node-peer-client.js'
