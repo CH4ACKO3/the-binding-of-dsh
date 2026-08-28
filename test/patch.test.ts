@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { tsquery } from '@phenomnomnominal/tsquery'
 import MagicString from 'magic-string'
 import ts from 'typescript'
@@ -25,7 +26,7 @@ test('ships one atomic Harmony patch for the complete integration', () => {
 
 function targetPath(member) {
   const packagePath = require.resolve(`${member.target.package}/package.json`)
-  return new URL(member.target.file, `file://${packagePath}`).pathname
+  return fileURLToPath(new URL(member.target.file, pathToFileURL(packagePath)))
 }
 
 async function applyPatch(declaration) {
